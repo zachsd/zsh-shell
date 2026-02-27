@@ -348,6 +348,19 @@ plugins=(
 source "\$ZSH/oh-my-zsh.sh"
 
 # ------------------------------------------------------------------------------
+# Completion menu — Tab cycles through options, Enter selects
+# ------------------------------------------------------------------------------
+# Enable interactive menu-select so completions are shown as a navigable list.
+# Must be configured after oh-my-zsh.sh (which calls compinit and creates the
+# menuselect keymap).
+zstyle ':completion:*' menu select
+# Tab enters menu-select mode; Shift-Tab enters it going backwards.
+bindkey '\t' menu-select "\$terminfo[kcbt]" menu-select
+# While inside the menu: Tab advances to the next option,
+# Shift-Tab goes to the previous option. Enter (built-in) confirms selection.
+bindkey -M menuselect '\t' menu-complete "\$terminfo[kcbt]" reverse-menu-complete
+
+# ------------------------------------------------------------------------------
 # oh-my-posh — atomic theme
 # ------------------------------------------------------------------------------
 if command -v oh-my-posh &>/dev/null; then
