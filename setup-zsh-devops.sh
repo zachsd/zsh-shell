@@ -361,6 +361,15 @@ bindkey '\t' menu-select "\$terminfo[kcbt]" menu-select
 bindkey -M menuselect '\t' menu-complete "\$terminfo[kcbt]" reverse-menu-complete
 
 # ------------------------------------------------------------------------------
+# Arrow keys — restore up/down to standard history cycling
+# ------------------------------------------------------------------------------
+# zsh-autocomplete overrides the up/down arrows with a history-search widget.
+# Rebind them here (after oh-my-zsh.sh/compinit) to restore simple one-by-one
+# cycling through previous commands.
+bindkey "\$terminfo[kcuu1]" up-line-or-history    # Up arrow → previous command
+bindkey "\$terminfo[kcud1]" down-line-or-history  # Down arrow → next command
+
+# ------------------------------------------------------------------------------
 # oh-my-posh — atomic theme
 # ------------------------------------------------------------------------------
 if command -v oh-my-posh &>/dev/null; then
