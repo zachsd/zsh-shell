@@ -30,6 +30,19 @@ header() { echo -e "\n${BOLD}${CYAN}══════════════�
 
 FAILED_PKGS=()
 
+# When FAIL_LOG is a non-empty path, failures are appended there instead of the
+# FAILED_PKGS array. Background jobs run in subshells and can't mutate the
+# parent's array, so during the parallel-download phase we point FAIL_LOG at a
+# temp file and merge it back afterwards. record_failure() bridges both modes.
+FAIL_LOG=""
+record_failure() {
+  if [[ -n "$FAIL_LOG" ]]; then
+    printf '%s\n' "$1" >> "$FAIL_LOG"   # single-line append is atomic (< PIPE_BUF)
+  else
+    FAILED_PKGS+=("$1")
+  fi
+}
+
 # Populated by detect_distro():
 PKG_MANAGER=""    # "apt" | "dnf" | "yum"
 DISTRO_FAMILY=""  # "debian" | "rhel"
@@ -37,7 +50,8 @@ DISTRO_ID=""      # e.g. "ubuntu", "debian", "fedora", "centos", "rhel", "almali
 DISTRO_VERSION="" # e.g. "22.04", "9"
 
 # Populated by detect_arch():
-ARCH=""  # "amd64" | "arm64"
+ARCH=""      # Go-style: "amd64" | "arm64"
+ARCH_ALT=""  # target-triple style: "x86_64" | "aarch64" (some projects use this)
 
 # Background sudo keepalive PID
 SUDO_KEEPALIVE_PID=""
@@ -93,12 +107,12 @@ detect_distro() {
 
 detect_arch() {
   case "$(uname -m)" in
-    x86_64)  ARCH="amd64" ;;
-    aarch64) ARCH="arm64" ;;
-    armv7l)  ARCH="arm"   ;;
-    *)       ARCH="$(uname -m)"; warn "Unrecognised architecture: $ARCH" ;;
+    x86_64)  ARCH="amd64"; ARCH_ALT="x86_64"  ;;
+    aarch64) ARCH="arm64"; ARCH_ALT="aarch64" ;;
+    armv7l)  ARCH="arm";   ARCH_ALT="armv7"   ;;
+    *)       ARCH="$(uname -m)"; ARCH_ALT="$ARCH"; warn "Unrecognised architecture: $ARCH" ;;
   esac
-  log "Architecture: $ARCH"
+  log "Architecture: $ARCH (alt: $ARCH_ALT)"
 }
 
 require_sudo() {
@@ -196,7 +210,7 @@ install_github_release() {
 
   if [[ -z "$download_url" ]]; then
     warn "Could not find asset matching '$asset_re' in $repo releases."
-    FAILED_PKGS+=("$desc")
+    record_failure "$desc"
     return 1
   fi
 
@@ -210,7 +224,7 @@ install_github_release() {
   log "Downloading $filename …"
   curl -fsSL "$download_url" -o "${tmpdir}/${filename}" || {
     warn "Download failed for $desc."
-    FAILED_PKGS+=("$desc")
+    record_failure "$desc"
     rm -rf "$tmpdir"
     return 1
   }
@@ -225,7 +239,7 @@ install_github_release() {
         sudo install -m 0755 "$found" "$install_path"
       else
         warn "Could not locate '$binary_name' after unpacking $filename."
-        FAILED_PKGS+=("$desc"); rm -rf "$tmpdir"; return 1
+        record_failure "$desc"; rm -rf "$tmpdir"; return 1
       fi
       ;;
     *.zip)
@@ -236,7 +250,7 @@ install_github_release() {
         sudo install -m 0755 "$found" "$install_path"
       else
         warn "Could not locate '$binary_name' after unzipping."
-        FAILED_PKGS+=("$desc"); rm -rf "$tmpdir"; return 1
+        record_failure "$desc"; rm -rf "$tmpdir"; return 1
       fi
       ;;
     *)
@@ -247,6 +261,76 @@ install_github_release() {
 
   rm -rf "$tmpdir"
   log "$desc installed → $install_path"
+}
+
+# ------------------------------------------------------------------------------
+# Bounded parallel job pool
+# The GitHub-release installs are independent and network-bound, so running them
+# concurrently cuts the wall-clock time of Step 8 substantially. pbg launches its
+# argument command in the background, throttled to MAX_PARALLEL_DOWNLOADS live
+# jobs; wait_downloads() blocks until they all finish. Only self-contained
+# install_github_release calls go through this — never apt/dnf (which serialize
+# on the dpkg/rpm lock anyway). Failures are collected via FAIL_LOG.
+# ------------------------------------------------------------------------------
+MAX_PARALLEL_DOWNLOADS="${MAX_PARALLEL_DOWNLOADS:-6}"
+DOWNLOAD_PIDS=()
+
+pbg() {
+  # While at capacity, prune finished PIDs and wait. The array is only expanded
+  # inside the loop body (guaranteed non-empty there) to stay safe under set -u.
+  while (( ${#DOWNLOAD_PIDS[@]} >= MAX_PARALLEL_DOWNLOADS )); do
+    local live=() p
+    for p in "${DOWNLOAD_PIDS[@]}"; do
+      kill -0 "$p" 2>/dev/null && live+=("$p")
+    done
+    if (( ${#live[@]} )); then DOWNLOAD_PIDS=("${live[@]}"); else DOWNLOAD_PIDS=(); fi
+    (( ${#DOWNLOAD_PIDS[@]} >= MAX_PARALLEL_DOWNLOADS )) && sleep 0.3
+  done
+  "$@" &
+  DOWNLOAD_PIDS+=($!)
+}
+
+wait_downloads() {
+  # Wait only for our download jobs (not the sudo keepalive), then merge any
+  # failures recorded to FAIL_LOG back into FAILED_PKGS.
+  [[ ${#DOWNLOAD_PIDS[@]} -gt 0 ]] && wait "${DOWNLOAD_PIDS[@]}" 2>/dev/null
+  DOWNLOAD_PIDS=()
+  if [[ -n "$FAIL_LOG" && -s "$FAIL_LOG" ]]; then
+    local line
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && FAILED_PKGS+=("$line")
+    done < "$FAIL_LOG"
+  fi
+  [[ -n "$FAIL_LOG" ]] && rm -f "$FAIL_LOG"
+  FAIL_LOG=""
+}
+
+# ------------------------------------------------------------------------------
+# GitHub API rate-limit check
+# This script makes ~16 unauthenticated GitHub API calls (release lookups + the
+# Nerd Font). Unauthenticated requests are capped at 60/hour/IP, so shared or
+# NAT'd networks — or a re-run — can exhaust the budget and cause downloads to
+# fail with HTTP 403. Warn early and point at GITHUB_TOKEN. (The /rate_limit
+# endpoint itself does not count against the limit.)
+# ------------------------------------------------------------------------------
+check_github_rate_limit() {
+  if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    log "GITHUB_TOKEN detected — using authenticated GitHub API (higher rate limit)."
+    return 0
+  fi
+  local remaining
+  remaining=$(curl -fsSL --max-time 10 "https://api.github.com/rate_limit" 2>/dev/null \
+    | grep -A3 '"core"' | grep '"remaining"' | grep -oE '[0-9]+' | head -1)
+  if [[ -z "$remaining" ]]; then
+    warn "Could not query GitHub API rate limit. Set GITHUB_TOKEN if downloads 403."
+  elif (( remaining < 20 )); then
+    warn "GitHub API: only ${remaining} unauthenticated requests left this hour."
+    warn "  This script needs ~16; some downloads may fail with HTTP 403."
+    warn "  Raise the limit:  export GITHUB_TOKEN=<a personal access token>"
+  else
+    log "GitHub API: ${remaining} unauthenticated requests remaining this hour."
+    log "  Tip: export GITHUB_TOKEN to avoid rate limits (recommended for re-runs)."
+  fi
 }
 
 # ==============================================================================
@@ -277,6 +361,8 @@ for _cmd in curl git unzip tar; do
   fi
 done
 unset _cmd
+
+check_github_rate_limit
 
 # ==============================================================================
 # 2. Package manager setup and external repos
@@ -546,6 +632,12 @@ fi
 # ==============================================================================
 header "8 / 9  Installing tools"
 
+# GitHub-release binaries (the `pbg …` calls below) download and install in
+# parallel; their per-tool logs interleave and their failures are collected via
+# FAIL_LOG until wait_downloads() at the end of this step merges them back.
+FAIL_LOG="$(mktemp)"
+log "Release-binary downloads run in parallel (up to ${MAX_PARALLEL_DOWNLOADS} at once); logs may interleave."
+
 # ── DevOps / IaC ──────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}  DevOps / IaC${RESET}"
 
@@ -555,31 +647,31 @@ safe_pkg_install packer    "HashiCorp Packer"
 safe_pkg_install vault     "HashiCorp Vault"
 
 # Terragrunt — GitHub release binary
-install_github_release "gruntwork-io/terragrunt" \
+pbg install_github_release "gruntwork-io/terragrunt" \
   "terragrunt_linux_${ARCH}$" \
   "/usr/local/bin/terragrunt" \
   "Terragrunt"
 
 # TFLint — GitHub release binary (zip)
-install_github_release "terraform-linters/tflint" \
+pbg install_github_release "terraform-linters/tflint" \
   "tflint_linux_${ARCH}\.zip" \
   "/usr/local/bin/tflint" \
   "TFLint"
 
 # terraform-docs — GitHub release binary (tar.gz)
-install_github_release "terraform-docs/terraform-docs" \
+pbg install_github_release "terraform-docs/terraform-docs" \
   "terraform-docs-v[0-9].*-linux-${ARCH}\.tar\.gz" \
   "/usr/local/bin/terraform-docs" \
   "terraform-docs"
 
 # Infracost — GitHub release binary (tar.gz)
-install_github_release "infracost/infracost" \
+pbg install_github_release "infracost/infracost" \
   "infracost-linux-${ARCH}\.tar\.gz" \
   "/usr/local/bin/infracost" \
   "Infracost"
 
 # SOPS — GitHub release binary (bare binary)
-install_github_release "getsops/sops" \
+pbg install_github_release "getsops/sops" \
   "sops-v[0-9].*\.linux\.${ARCH}$" \
   "/usr/local/bin/sops" \
   "SOPS (secrets)"
@@ -622,13 +714,13 @@ install_awscli() {
 install_awscli
 
 # aws-iam-authenticator — GitHub release binary
-install_github_release "kubernetes-sigs/aws-iam-authenticator" \
+pbg install_github_release "kubernetes-sigs/aws-iam-authenticator" \
   "aws-iam-authenticator_[0-9].*_linux_${ARCH}$" \
   "/usr/local/bin/aws-iam-authenticator" \
   "AWS IAM Authenticator"
 
 # eksctl — GitHub release binary (tar.gz)
-install_github_release "eksctl-io/eksctl" \
+pbg install_github_release "eksctl-io/eksctl" \
   "eksctl_Linux_${ARCH}\.tar\.gz" \
   "/usr/local/bin/eksctl" \
   "eksctl (EKS)"
@@ -650,35 +742,36 @@ if ! safe_pkg_install helm "Helm" 2>/dev/null && ! command -v helm &>/dev/null; 
 fi
 
 # kubectx + kubens — GitHub release (separate tar.gz assets)
-install_github_release "ahmetb/kubectx" \
-  "kubectx_v[0-9].*_linux_${ARCH}\.tar\.gz" \
+# kubectx/kubens assets use x86_64 (not amd64) on Intel — match both spellings
+pbg install_github_release "ahmetb/kubectx" \
+  "kubectx_v[0-9].*_linux_(${ARCH}|${ARCH_ALT})\.tar\.gz" \
   "/usr/local/bin/kubectx" \
   "kubectx"
-install_github_release "ahmetb/kubectx" \
-  "kubens_v[0-9].*_linux_${ARCH}\.tar\.gz" \
+pbg install_github_release "ahmetb/kubectx" \
+  "kubens_v[0-9].*_linux_(${ARCH}|${ARCH_ALT})\.tar\.gz" \
   "/usr/local/bin/kubens" \
   "kubens"
 
 # k9s — GitHub release binary (tar.gz)
-install_github_release "derailed/k9s" \
+pbg install_github_release "derailed/k9s" \
   "k9s_Linux_${ARCH}\.tar\.gz" \
   "/usr/local/bin/k9s" \
   "K9s (TUI)"
 
 # kustomize — GitHub release binary (tar.gz)
-install_github_release "kubernetes-sigs/kustomize" \
+pbg install_github_release "kubernetes-sigs/kustomize" \
   "kustomize_v[0-9].*_linux_${ARCH}\.tar\.gz" \
   "/usr/local/bin/kustomize" \
   "Kustomize"
 
 # stern — GitHub release binary (tar.gz)
-install_github_release "stern/stern" \
+pbg install_github_release "stern/stern" \
   "stern_[0-9].*_linux_${ARCH}\.tar\.gz" \
   "/usr/local/bin/stern" \
   "Stern (multi-pod log tailing)"
 
 # kubeseal — GitHub release binary (tar.gz)
-install_github_release "bitnami-labs/sealed-secrets" \
+pbg install_github_release "bitnami-labs/sealed-secrets" \
   "kubeseal-[0-9].*-linux-${ARCH}\.tar\.gz" \
   "/usr/local/bin/kubeseal" \
   "Sealed Secrets CLI"
@@ -702,7 +795,7 @@ install_oc() {
 install_oc
 
 # kubecolor — GitHub release binary (tar.gz)
-install_github_release "kubecolor/kubecolor" \
+pbg install_github_release "kubecolor/kubecolor" \
   "kubecolor_[0-9].*_linux_${ARCH}\.tar\.gz" \
   "/usr/local/bin/kubecolor" \
   "kubecolor (colourised kubectl)"
@@ -739,8 +832,9 @@ install_eza() {
   elif [[ "$DISTRO_FAMILY" == "rhel" ]]; then
     sudo "$PKG_MANAGER" install -y -q eza 2>/dev/null && return 0
   fi
+  # eza release assets use the Rust target triple, e.g. eza_x86_64-unknown-linux-gnu.tar.gz
   install_github_release "eza-community/eza" \
-    "eza_linux_${ARCH}\.tar\.gz" \
+    "eza_(${ARCH}|${ARCH_ALT})-unknown-linux-gnu\.tar\.gz" \
     "/usr/local/bin/eza" \
     "eza (modern ls)"
 }
@@ -754,8 +848,9 @@ install_zoxide() {
   fi
   safe_pkg_install zoxide "zoxide (smart cd)"
   command -v zoxide &>/dev/null && return 0
+  # Match the arch dynamically (was hardcoded x86_64, which failed on arm64)
   install_github_release "ajeetdsouza/zoxide" \
-    "zoxide-[0-9].*-x86_64-unknown-linux-musl\.tar\.gz" \
+    "zoxide-[0-9].*-(${ARCH}|${ARCH_ALT})-unknown-linux-musl\.tar\.gz" \
     "/usr/local/bin/zoxide" \
     "zoxide (smart cd)"
 }
@@ -824,16 +919,29 @@ fi
 safe_pkg_install tmux    "tmux"
 safe_pkg_install htop    "htop"
 
-# bottom (btm) — GitHub release (not widely packaged)
-install_github_release "ClementTsang/bottom" \
-  "bottom_linux_${ARCH}\.tar\.gz" \
+# bottom (btm) — GitHub release (not widely packaged).
+# Assets use the Rust target triple, e.g. bottom_x86_64-unknown-linux-gnu.tar.gz
+pbg install_github_release "ClementTsang/bottom" \
+  "bottom_(${ARCH}|${ARCH_ALT})-unknown-linux-gnu\.tar\.gz" \
   "/usr/local/bin/btm" \
   "bottom (btm — system monitor)"
 
 # speedtest-cli
 if ! safe_pkg_install speedtest-cli "Speedtest CLI" 2>/dev/null && ! command -v speedtest-cli &>/dev/null; then
-  python3 -m pip install --user speedtest-cli 2>/dev/null \
-    || { warn "speedtest-cli not available."; FAILED_PKGS+=("speedtest-cli"); }
+  # pip is the fallback when the distro doesn't package it. Modern distros mark
+  # the system Python as externally managed (PEP 668), so a bare
+  # `pip install --user` fails — prefer pipx, then retry pip with
+  # --break-system-packages.
+  if command -v pipx &>/dev/null; then
+    pipx install speedtest-cli 2>/dev/null \
+      || { warn "speedtest-cli not available."; FAILED_PKGS+=("speedtest-cli"); }
+  elif command -v python3 &>/dev/null; then
+    python3 -m pip install --user speedtest-cli 2>/dev/null \
+      || python3 -m pip install --user --break-system-packages speedtest-cli 2>/dev/null \
+      || { warn "speedtest-cli not available (try: pipx install speedtest-cli)."; FAILED_PKGS+=("speedtest-cli"); }
+  else
+    warn "speedtest-cli not available (no pipx/python3)."; FAILED_PKGS+=("speedtest-cli")
+  fi
 fi
 
 safe_pkg_install httping "httping (TCP/IP packet tester)"
@@ -879,13 +987,38 @@ EOF
 }
 install_vscode
 
+# Barrier: wait for all parallel GitHub-release downloads to finish and fold
+# their failures back into FAILED_PKGS before we report/summarise.
+log "Waiting for parallel release-binary installs to finish …"
+wait_downloads
+
 # ==============================================================================
-# 9. Generate ~/.zshrc
+# 9. Generate ~/.zshenv and ~/.zshrc
 # ==============================================================================
-header "9 / 9  Writing ~/.zshrc"
+header "9 / 9  Writing ~/.zshenv and ~/.zshrc"
+
+# --- ~/.zshenv : PATH lives here so it applies to ALL shells (login,
+#     interactive, and scripts) and is de-duplicated via `typeset -U`.
+ZSHENV="${HOME}/.zshenv"
+TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+if [[ -f "$ZSHENV" ]]; then
+  cp "$ZSHENV" "${ZSHENV}.backup.${TIMESTAMP}"
+  log "Backed up existing .zshenv → ${ZSHENV}.backup.${TIMESTAMP}"
+fi
+cat > "$ZSHENV" << 'ZSHENV_EOF'
+# ==============================================================================
+# ~/.zshenv — environment for all zsh shells  (generated by setup-zsh-devops-linux.sh)
+# ==============================================================================
+# `typeset -U path` keeps the array unique, so re-sourcing never duplicates
+# entries; the leading assignment guarantees our dirs take precedence.
+typeset -U path PATH
+path=("$HOME/.local/bin" "$HOME/bin" "/usr/local/bin" $path)
+export PATH
+ZSHENV_EOF
+log ".zshenv written."
 
 ZSHRC="${HOME}/.zshrc"
-BACKUP="${HOME}/.zshrc.backup.$(date +%Y%m%d_%H%M%S)"
+BACKUP="${HOME}/.zshrc.backup.${TIMESTAMP}"
 
 if [[ -f "$ZSHRC" ]]; then
   cp "$ZSHRC" "$BACKUP"
@@ -998,38 +1131,65 @@ bindkey "$terminfo[kcud1]" down-line-or-history  # Down arrow → next command
 # ------------------------------------------------------------------------------
 if command -v oh-my-posh &>/dev/null; then
   _OMP_CONFIG="$HOME/.config/oh-my-posh/atomic.omp.json"
-  if [[ ! -f "$_OMP_CONFIG" ]]; then
-    mkdir -p "$(dirname "$_OMP_CONFIG")"
-    curl -fsSL "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/atomic.omp.json" \
-         -o "$_OMP_CONFIG" 2>/dev/null || true
-  fi
+  # Never fetch over the network here — interactive shell startup must not block
+  # on I/O (a flaky/offline network would hang every new prompt). The installer
+  # downloads the theme; if it's somehow absent, fall back to the built-in
+  # default prompt silently.
   if [[ -f "$_OMP_CONFIG" ]]; then
     eval "$(oh-my-posh init zsh --config "$_OMP_CONFIG")"
   else
-    eval "$(oh-my-posh init zsh)"   # last-resort default
+    eval "$(oh-my-posh init zsh)"   # theme missing — use built-in default
   fi
 fi
 
 # ------------------------------------------------------------------------------
-# PATH
+# PATH — defined in ~/.zshenv (generated by the installer) so it applies to
+# non-interactive shells too and is de-duplicated instead of being re-prepended
+# every time this file is re-sourced.
 # ------------------------------------------------------------------------------
-export PATH="$HOME/.local/bin:$HOME/bin:/usr/local/bin:$PATH"
 
 # ------------------------------------------------------------------------------
 # Tool completions
 # ------------------------------------------------------------------------------
-# kubectl
-command -v kubectl   &>/dev/null && source <(kubectl completion zsh)
+# Each `tool completion zsh` forks the binary and evaluates its output — often
+# 100–400ms *per tool* on EVERY shell startup. Instead, cache the generated
+# script to disk and re-fork only when the cache is missing/empty or older than
+# the binary (i.e. after a tool upgrade); otherwise just source the cached file,
+# which costs a few ms. These are sourced after oh-my-zsh.sh (post-compinit),
+# exactly as before, so `compdef` calls inside them still work.
+_zsh_comp_cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/completions"
+mkdir -p "$_zsh_comp_cache"
+
+# Namespaced so `unset -f` below can't clobber a user-defined function.
+__zdo_load_comp() {
+  # __zdo_load_comp <cache-name> <command> [args...]
+  local out="$_zsh_comp_cache/$1.zsh"; shift
+  local bin; bin=$(command -v "$1" 2>/dev/null) || return 0
+  if [[ ! -s "$out" || "$bin" -nt "$out" ]]; then
+    # Generate to a per-process temp file and atomically mv into place ONLY on
+    # success. A failed generation or a concurrent shell startup can then never
+    # corrupt or clobber a previously-good cache — we simply keep the old one.
+    local tmp="$out.tmp.$$"
+    if "$@" > "$tmp" 2>/dev/null && [[ -s "$tmp" ]]; then
+      mv -f "$tmp" "$out"
+    else
+      rm -f "$tmp"
+      [[ -s "$out" ]] || return 0   # generation failed and no cache to reuse
+    fi
+  fi
+  source "$out"
+}
+
+__zdo_load_comp kubectl kubectl completion zsh
+__zdo_load_comp helm    helm    completion zsh
+__zdo_load_comp oc      oc      completion zsh
+__zdo_load_comp eksctl  eksctl  completion zsh
+__zdo_load_comp gh      gh      completion -s zsh
+unset -f __zdo_load_comp
+unset _zsh_comp_cache
+
 # kubecolor: inherit kubectl completions via compdef
 command -v kubecolor &>/dev/null && compdef kubecolor=kubectl
-# helm
-command -v helm       &>/dev/null && source <(helm completion zsh)
-# oc (OpenShift)
-command -v oc         &>/dev/null && source <(oc completion zsh)
-# eksctl
-command -v eksctl     &>/dev/null && source <(eksctl completion zsh)
-# gh (GitHub CLI)
-command -v gh         &>/dev/null && source <(gh completion -s zsh)
 # AWS
 command -v aws_completer &>/dev/null && complete -C "$(command -v aws_completer)" aws
 # Terraform (built-in)
@@ -1073,7 +1233,12 @@ export FZF_ALT_C_COMMAND="fd --type d --hidden --follow --exclude .git"
 # ------------------------------------------------------------------------------
 # zsh-autosuggestions
 # ------------------------------------------------------------------------------
-ZSH_AUTOSUGGEST_STRATEGY=(history completion)
+# 'history' only: the 'completion' strategy invokes the completion engine on
+# every keystroke to build a suggestion, which is noticeably heavy layered on
+# zsh-autocomplete + syntax-highlighting. History-based suggestions are far
+# cheaper and cover the vast majority of cases. Add 'completion' back if you
+# specifically want suggestions for never-run commands.
+ZSH_AUTOSUGGEST_STRATEGY=(history)
 ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE="fg=244"
 ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=50
 ZSH_AUTOSUGGEST_USE_ASYNC=1
@@ -1142,12 +1307,12 @@ alias mv='mv -iv'
 alias rm='rm -iv'
 alias mkdir='mkdir -pv'
 alias df='df -hT'
-alias du='du -sch *'
+alias du='du -h'          # human-readable; use 'du -sch ./*' explicitly for a per-entry summary
 alias ..='cd ..'
 alias ...='cd ../..'
 alias ....='cd ../../..'
 alias ~='cd ~'
-alias reload='exec zsh && echo "Shell reloaded."'
+alias reload='exec zsh'   # replace the shell with a fresh zsh (re-reads config)
 alias zshrc='${EDITOR:-vim} ~/.zshrc'
 alias path='echo $PATH | tr ":" "\n" | nl'
 alias now='date +"%Y-%m-%d %H:%M:%S %Z"'
