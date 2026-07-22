@@ -149,7 +149,7 @@ safe_pkg_install() {
   local pkg="$1" desc="${2:-$1}"
 
   # Fast-path: check if the package is already installed
-  if dpkg -s "$pkg" &>/dev/null 2>&1 || rpm -q "$pkg" &>/dev/null 2>&1; then
+  if dpkg -s "$pkg" &>/dev/null || rpm -q "$pkg" &>/dev/null; then
     log "$desc — already installed."
     return 0
   fi
@@ -1286,7 +1286,10 @@ setopt EXTENDED_HISTORY       # store timestamps
 setopt AUTO_CD                # type dir name to cd
 setopt AUTO_PUSHD             # push dirs onto stack automatically
 setopt PUSHD_IGNORE_DUPS
-setopt CORRECT                # spell-correct commands
+# CORRECT is intentionally left OFF: with this many aliases/functions it fires
+# constant "correct 'foo' to 'bar'? [nyae]" prompts that interrupt the flow.
+# Uncomment if you want interactive spell-correction of command names.
+# setopt CORRECT
 setopt NO_BEEP
 setopt GLOB_DOTS              # include dotfiles in globs
 setopt EXTENDED_GLOB
@@ -1299,8 +1302,12 @@ alias ls='eza --icons --group-directories-first'
 alias ll='eza -lah --icons --group-directories-first --git'
 alias la='eza -a --icons'
 alias lt='eza --tree --icons -L 3'
-alias cat='bat --style=plain --paging=never'
-alias less='bat --style=plain'
+# 'cat'/'less' are intentionally NOT shadowed by bat: overriding core commands
+# surprises muscle memory, and because zsh expands aliases when a function is
+# *parsed*, an alias here would silently leak into helpers like json()/yaml()
+# defined later in this file. Use bat directly, or these explicit aliases:
+alias batp='bat --style=plain --paging=never'   # plain, no pager (cat-like)
+alias batf='bat --style=full'                    # full view, paged (less-like)
 alias grep='grep --color=auto'
 alias cp='cp -iv'
 alias mv='mv -iv'
