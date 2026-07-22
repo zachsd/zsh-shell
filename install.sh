@@ -48,6 +48,12 @@ say()  { printf '%b[detect]%b %s\n' "$C_G" "$C_0" "$1"; }
 warn() { printf '%b[warn]%b  %s\n'  "$C_Y" "$C_0" "$1" >&2; }
 die()  { printf '%b[error]%b %s\n'  "$C_R" "$C_0" "$1" >&2; exit 1; }
 
+# True only when the controlling terminal can actually be OPENED. A /dev/tty
+# device node often still exists under CI/cron with no controlling terminal, so
+# a mere `[ -e /dev/tty ]` passes and then the redirection fails under `set -e`.
+# Testing an open avoids that (and lets --yes work in non-interactive contexts).
+have_tty() { { true < /dev/tty; } 2>/dev/null; }
+
 usage() {
   cat <<EOF
 install.sh — detect OS/shell and run the matching zsh DevOps setup script.
@@ -133,7 +139,7 @@ fi
 # being piped from curl — in which case stdin is the pipe, not the keyboard).
 # ------------------------------------------------------------------------------
 if [ "$ASSUME_YES" -ne 1 ]; then
-  if [ -e /dev/tty ]; then
+  if have_tty; then
     printf '%bProceed with the %s setup now?%b [Y/n] ' "$C_B" "$PLATFORM" "$C_0" > /dev/tty
     read reply < /dev/tty || reply=""
     case "$reply" in
@@ -168,8 +174,9 @@ fi
 
 say "Launching ${SCRIPT} …"
 printf '\n'
-# Reconnect stdin to the terminal when available so interactive prompts work.
-if [ -e /dev/tty ]; then
+# Reconnect stdin to the terminal when one can actually be opened, so the setup
+# script's prompts work; otherwise leave stdin as-is (e.g. CI/cron).
+if have_tty; then
   bash "$TMP" < /dev/tty
 else
   bash "$TMP"

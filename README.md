@@ -27,8 +27,8 @@ curl -fsSL https://raw.githubusercontent.com/zachsd/zsh-shell/main/install.sh | 
 ```
 
 > The script asks for confirmation and uses `sudo` for system packages. Read it
-> first if you like — `curl -fsSL .../install.sh | less` — before piping to a
-> shell.
+> first if you like — `curl -fsSL https://raw.githubusercontent.com/zachsd/zsh-shell/main/install.sh | less`
+> — before piping to a shell.
 
 ### Or run a platform script directly
 
@@ -105,8 +105,10 @@ The Linux installer also honors `MAX_PARALLEL_DOWNLOADS` (default `6`).
 
 ## Requirements
 
-- **Linux:** a Debian- or RHEL-family distro with `sudo`, plus `curl`/`git`
-  (the script bootstraps these if missing).
+- **Linux:** a Debian- or RHEL-family distro with `sudo`. For the `curl | sh`
+  path you need a downloader (`curl` **or** `wget`) plus `bash` to run the setup
+  script; other essentials like `git`/`unzip`/`tar` are bootstrapped by the
+  setup script if missing.
 - **macOS:** [Homebrew]. `bash` is required to run the setup script.
 - `install.sh` itself is POSIX `sh`, so it runs the same under `sh`, `bash`,
   `dash`, or `zsh`.
