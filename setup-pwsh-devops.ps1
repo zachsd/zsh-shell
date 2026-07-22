@@ -16,7 +16,13 @@
 
  This is the PowerShell counterpart to setup-zsh-devops.sh / -linux.sh.
 
- Usage (from a PowerShell prompt):
+ Compatibility: runs on both PowerShell 7+ (pwsh, the priority target) AND
+ Windows PowerShell 5.1. The generated profile is written to BOTH profile
+ locations and is itself version-neutral (feature detection at runtime), so a
+ modern pwsh 7 session and an older Windows PowerShell 5.1 session on the same
+ machine both get a working, degrade-gracefully environment.
+
+ Usage (from a PowerShell 7 prompt — preferred — or Windows PowerShell 5.1):
      Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
      .\setup-pwsh-devops.ps1
 ==============================================================================
@@ -156,19 +162,33 @@ function Install-PSModuleSafe {
 # ==============================================================================
 Write-Header "1 / 9  Preflight checks"
 
+# Windows PowerShell 5.1 negotiates TLS 1.0/1.1 by default, which the PowerShell
+# Gallery and the scoop installer now reject. Force TLS 1.2 for the whole run so
+# Install-Module and the scoop bootstrap succeed on 5.1 (no-op on 7+).
+try {
+    [Net.ServicePointManager]::SecurityProtocol = `
+        [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+} catch { }
+
+# $IsWindows only exists on PowerShell 6+; on 5.1 it's $null (and 5.1 only runs
+# on Windows anyway), so this correctly allows 5.1 through and blocks non-Windows
+# on 7+.
 if ($env:OS -ne 'Windows_NT' -and -not $IsWindows) {
     Write-Err "This script targets Windows. For macOS/Linux use the setup-zsh-devops*.sh scripts."
     exit 1
 }
 
 $osCaption = try { (Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).Caption } catch { "Windows" }
-Write-Log "$osCaption ($([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture))"
-Write-Log "PowerShell $($PSVersionTable.PSVersion) [$($PSVersionTable.PSEdition)]"
+$osArch    = try { [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture } catch { $env:PROCESSOR_ARCHITECTURE }
+Write-Log "$osCaption ($osArch)"
+Write-Log "Running under PowerShell $($PSVersionTable.PSVersion) [$($PSVersionTable.PSEdition)]"
 
 if ($PSVersionTable.PSVersion.Major -lt 7) {
-    Write-Warn "You're on Windows PowerShell $($PSVersionTable.PSVersion.Major).x."
-    Write-Warn "PowerShell 7+ (pwsh) is strongly recommended — this script installs it,"
-    Write-Warn "and the generated profile targets the pwsh 7 profile path."
+    Write-Warn "You're running this under Windows PowerShell $($PSVersionTable.PSVersion.Major).x."
+    Write-Warn "PowerShell 7+ (pwsh) is the priority target — this script installs it."
+    Write-Warn "A compatible profile is still written for Windows PowerShell 5.1 too."
+} else {
+    Write-Log "PowerShell 7+ detected — priority target. A 5.1 profile is also written for compatibility."
 }
 
 # ==============================================================================
@@ -403,22 +423,38 @@ if ($SkipTools) {
 # ==============================================================================
 Write-Header "8 / 9  Writing the PowerShell profile"
 
-# Target the pwsh 7 profile path when pwsh exists, else the current host's.
-$targetProfile = $null
+# The SAME version-neutral profile is written to BOTH profile locations so a
+# pwsh 7 session (priority) and a Windows PowerShell 5.1 session both pick it up.
+# Both editions honour the same Documents redirection (e.g. OneDrive), so
+# building from MyDocuments is reliable for the 5.1 path; pwsh is queried for its
+# own path so we respect wherever it reports $PROFILE.
+$targetProfiles = [System.Collections.Generic.List[string]]::new()
+
+# --- PowerShell 7 (priority) -------------------------------------------------
 if (Test-CommandExists pwsh) {
-    try { $targetProfile = (pwsh -NoProfile -Command '$PROFILE.CurrentUserCurrentHost' 2>$null).Trim() } catch { }
+    try {
+        $p7 = (pwsh -NoProfile -Command '$PROFILE.CurrentUserCurrentHost' 2>$null)
+        if ($p7) { $targetProfiles.Add($p7.Trim()) }
+    } catch { }
+} elseif ($PSVersionTable.PSVersion.Major -ge 7) {
+    $targetProfiles.Add($PROFILE.CurrentUserCurrentHost)
 }
-if (-not $targetProfile) { $targetProfile = $PROFILE.CurrentUserCurrentHost }
 
-$profileDir = Split-Path -Parent $targetProfile
-if (-not (Test-Path $profileDir)) { New-Item -ItemType Directory -Path $profileDir -Force | Out-Null }
-
-if (Test-Path $targetProfile) {
-    $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-    $backup = "$targetProfile.backup.$timestamp"
-    Copy-Item $targetProfile $backup -Force
-    Write-Log "Backed up existing profile -> $backup"
+# --- Windows PowerShell 5.1 (compatibility) ----------------------------------
+if ($PSVersionTable.PSEdition -eq 'Desktop') {
+    # Running under 5.1 right now: $PROFILE already points at the 5.1 path.
+    $targetProfiles.Add($PROFILE.CurrentUserCurrentHost)
+} else {
+    $docs = try { [Environment]::GetFolderPath('MyDocuments') } catch { $null }
+    if ($docs) {
+        $targetProfiles.Add((Join-Path $docs 'WindowsPowerShell\Microsoft.PowerShell_profile.ps1'))
+    }
 }
+
+# Fallback + de-dup.
+if ($targetProfiles.Count -eq 0) { $targetProfiles.Add($PROFILE.CurrentUserCurrentHost) }
+$targetProfiles = @($targetProfiles | Select-Object -Unique)
+$primaryProfile = $targetProfiles[0]
 
 # The profile is written as a single-quoted here-string (no interpolation), so
 # every `$` below is literal PowerShell for the *generated* profile, not this
@@ -427,44 +463,55 @@ $profileContent = @'
 # ==============================================================================
 # PowerShell profile — Modern DevOps / Cloud Admin Environment
 # Generated by setup-pwsh-devops.ps1
+#
+# Version-neutral: loads under BOTH PowerShell 7+ (priority) and Windows
+# PowerShell 5.1. Every edition-specific feature is probed at runtime and
+# degrades gracefully, so the same file works in either host.
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
 # PSReadLine — syntax highlighting + inline autosuggestions + prediction menu
 #   (the zsh-syntax-highlighting / zsh-autosuggestions / zsh-autocomplete combo)
 # ------------------------------------------------------------------------------
-Import-Module PSReadLine -ErrorAction SilentlyContinue
+# Prefer the newer PSReadLine the installer put in the user module path. On 5.1
+# an older PSReadLine may already be auto-loaded; -MinimumVersion picks the newer
+# one when present, and everything below is guarded so it's fine either way.
+Import-Module PSReadLine -MinimumVersion 2.2.0 -ErrorAction SilentlyContinue
+if (-not (Get-Module PSReadLine)) { Import-Module PSReadLine -ErrorAction SilentlyContinue }
 
-# Inline "ghost text" suggestions sourced from history (+ prediction plugins),
-# shown as a dropdown ListView — the closest analogue to zsh-autocomplete's
-# live listing plus zsh-autosuggestions' inline hint.
+# Predictive IntelliSense (PSReadLine 2.1+). ListView needs 2.2+. Older builds
+# (e.g. the 2.0 shipped with a fresh Windows PowerShell 5.1) lack -PredictionSource
+# entirely, so the whole block is best-effort.
 try {
     Set-PSReadLineOption -PredictionSource HistoryAndPlugin -ErrorAction Stop
 } catch {
-    Set-PSReadLineOption -PredictionSource History -ErrorAction SilentlyContinue
+    try { Set-PSReadLineOption -PredictionSource History -ErrorAction Stop } catch { }
 }
 Set-PSReadLineOption -PredictionViewStyle ListView -ErrorAction SilentlyContinue
-Set-PSReadLineOption -EditMode Windows
-Set-PSReadLineOption -BellStyle None                 # NO_BEEP
-Set-PSReadLineOption -HistoryNoDuplicates            # HIST_IGNORE_ALL_DUPS
-Set-PSReadLineOption -HistorySearchCursorMovesToEnd
-Set-PSReadLineOption -MaximumHistoryCount 100000     # HISTSIZE / SAVEHIST
-Set-PSReadLineOption -HistorySaveStyle SaveIncrementally
+Set-PSReadLineOption -EditMode Windows -ErrorAction SilentlyContinue
+Set-PSReadLineOption -BellStyle None -ErrorAction SilentlyContinue          # NO_BEEP
+Set-PSReadLineOption -HistoryNoDuplicates -ErrorAction SilentlyContinue     # HIST_IGNORE_ALL_DUPS
+Set-PSReadLineOption -HistorySearchCursorMovesToEnd -ErrorAction SilentlyContinue
+Set-PSReadLineOption -MaximumHistoryCount 100000 -ErrorAction SilentlyContinue   # HISTSIZE
+Set-PSReadLineOption -HistorySaveStyle SaveIncrementally -ErrorAction SilentlyContinue
 
 # Syntax-highlighting colours (Tokyo-Night-ish, to match the fzf theme below).
-Set-PSReadLineOption -Colors @{
-    Command            = '#7AA2F7'
-    Parameter          = '#BB9AF7'
-    Operator           = '#89DDFF'
-    Variable           = '#C0CAF5'
-    String             = '#9ECE6A'
-    Number             = '#FF9E64'
-    Comment            = '#565F89'
-    Keyword            = '#BB9AF7'
-    Error              = '#F7768E'
-    InlinePrediction   = '#565F89'
-    Selection          = '#283457'
-}
+# Hex colour strings need PSReadLine 2.0+; guarded so an ancient build can't error.
+try {
+    Set-PSReadLineOption -Colors @{
+        Command            = '#7AA2F7'
+        Parameter          = '#BB9AF7'
+        Operator           = '#89DDFF'
+        Variable           = '#C0CAF5'
+        String             = '#9ECE6A'
+        Number             = '#FF9E64'
+        Comment            = '#565F89'
+        Keyword            = '#BB9AF7'
+        Error              = '#F7768E'
+        InlinePrediction   = '#565F89'
+        Selection          = '#283457'
+    } -ErrorAction Stop
+} catch { }
 
 # Tab -> interactive completion MENU (zsh 'menu select'); Shift-Tab goes back.
 Set-PSReadLineKeyHandler -Key Tab       -Function MenuComplete
@@ -517,7 +564,9 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 # Each `tool completion powershell` forks the binary and evaluates its output —
 # 100-400ms per tool on EVERY startup. Cache the generated script to disk and
 # re-fork only when the cache is missing/empty or older than the binary.
-$__compCache = Join-Path ($env:LOCALAPPDATA ?? $HOME) 'pwsh\completions'
+# (No null-coalescing here — must parse under Windows PowerShell 5.1 too.)
+$__compBase  = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { $HOME }
+$__compCache = Join-Path $__compBase 'PowerShell\completions'
 if (-not (Test-Path $__compCache)) { New-Item -ItemType Directory -Path $__compCache -Force | Out-Null }
 
 function global:__Load-Comp {
@@ -738,7 +787,7 @@ function awsregion {
     if ($r) { $env:AWS_DEFAULT_REGION = $r.Trim(); Write-Host "AWS_DEFAULT_REGION=$env:AWS_DEFAULT_REGION" }
 }
 # EKS kubeconfig update: eksconfig <cluster> [region]
-function eksconfig { param([string]$Cluster, [string]$Region) if (-not $Region) { $Region = ($env:AWS_DEFAULT_REGION ?? 'us-east-1') } aws eks update-kubeconfig --name $Cluster --region $Region }
+function eksconfig { param([string]$Cluster, [string]$Region) if (-not $Region) { $Region = if ($env:AWS_DEFAULT_REGION) { $env:AWS_DEFAULT_REGION } else { 'us-east-1' } } aws eks update-kubeconfig --name $Cluster --region $Region }
 
 # ==============================================================================
 # Aliases — Azure
@@ -938,8 +987,22 @@ function k8senc { param([string]$f) [Convert]::ToBase64String([IO.File]::ReadAll
 # (Kept minimal — oh-my-posh renders the prompt.)
 '@
 
-Set-Content -Path $targetProfile -Value $profileContent -Encoding UTF8
-Write-Log "Profile written -> $targetProfile"
+$timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+foreach ($tp in $targetProfiles) {
+    $profileDir = Split-Path -Parent $tp
+    if ($profileDir -and -not (Test-Path $profileDir)) {
+        New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+    }
+    if (Test-Path $tp) {
+        $backup = "$tp.backup.$timestamp"
+        Copy-Item $tp $backup -Force
+        Write-Log "Backed up existing profile -> $backup"
+    }
+    # UTF-8. On 5.1 this includes a BOM (harmless & helps 5.1 read the glyphs);
+    # on 7+ Set-Content's UTF8 is BOM-less. Both editions read either fine.
+    Set-Content -Path $tp -Value $profileContent -Encoding UTF8
+    Write-Log "Profile written -> $tp"
+}
 
 # ==============================================================================
 # 9. Final summary
@@ -947,7 +1010,11 @@ Write-Log "Profile written -> $targetProfile"
 Write-Header "Setup complete!"
 
 Write-Host ""
-Write-Host "Profile path:  " -NoNewline; Write-Host $targetProfile -ForegroundColor Cyan
+Write-Host "Profiles written:" -ForegroundColor Cyan
+for ($i = 0; $i -lt $targetProfiles.Count; $i++) {
+    $tag = if ($i -eq 0) { "(primary)" } else { "(compat)" }
+    Write-Host "  - " -NoNewline; Write-Host $targetProfiles[$i] -ForegroundColor Cyan -NoNewline; Write-Host "  $tag"
+}
 Write-Host "Theme used:    " -NoNewline; Write-Host "atomic (oh-my-posh)" -ForegroundColor Cyan
 Write-Host "Font required: " -NoNewline; Write-Host "JetBrainsMono Nerd Font Mono" -ForegroundColor Cyan
 Write-Host ""
@@ -956,7 +1023,8 @@ Write-Host "  1. " -NoNewline; Write-Host "Set your terminal font" -ForegroundCo
 Write-Host "     - Windows Terminal: Settings -> Profiles -> Appearance -> Font face"
 Write-Host "     - VSCode:           `"terminal.integrated.fontFamily`": `"JetBrainsMono Nerd Font Mono`""
 Write-Host ""
-Write-Host "  2. " -NoNewline; Write-Host "Open a new PowerShell 7 (pwsh) session" -ForegroundColor Yellow -NoNewline; Write-Host ", or reload with:"
+Write-Host "  2. " -NoNewline; Write-Host "Open a new PowerShell 7 (pwsh) session" -ForegroundColor Yellow -NoNewline; Write-Host " — recommended —"
+Write-Host "     or a new Windows PowerShell 5.1 session, or reload with:"
 Write-Host "     . `$PROFILE" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  3. " -NoNewline; Write-Host "Configure credentials:" -ForegroundColor Yellow
