@@ -52,7 +52,7 @@ bash setup-zsh-devops.sh
 
 **Tooling** (best-effort; anything unavailable is reported at the end)
 - **IaC:** Terraform, Terragrunt, Packer, Vault, TFLint, terraform-docs, Infracost, SOPS, Ansible
-- **AWS:** AWS CLI v2, `aws-iam-authenticator`, `eksctl`
+- **AWS:** AWS CLI v2, `aws-iam-authenticator`, `eksctl`, Session Manager plugin
 - **Azure:** Azure CLI
 - **Kubernetes / OpenShift:** kubectl, Helm, kubectx/kubens, k9s, kustomize, stern, kubeseal, `oc`, kubecolor
 - **Containers:** Podman, Docker Compose

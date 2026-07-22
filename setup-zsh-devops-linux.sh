@@ -725,6 +725,36 @@ pbg install_github_release "eksctl-io/eksctl" \
   "/usr/local/bin/eksctl" \
   "eksctl (EKS)"
 
+# Session Manager plugin — vendor deb/rpm from AWS S3
+install_session_manager_plugin() {
+  if command -v session-manager-plugin &>/dev/null; then
+    log "AWS Session Manager Plugin — already installed."
+    return 0
+  fi
+  log "Installing AWS Session Manager Plugin …"
+  local tmpdir url pkg
+  tmpdir=$(mktemp -d)
+  if [[ "$DISTRO_FAMILY" == "debian" ]]; then
+    local slug="ubuntu_64bit"
+    [[ "$ARCH" == "arm64" ]] && slug="ubuntu_arm64"
+    url="https://s3.amazonaws.com/session-manager-downloads/plugin/latest/${slug}/session-manager-plugin.deb"
+    pkg="${tmpdir}/session-manager-plugin.deb"
+    curl -fsSL "$url" -o "$pkg" \
+      && sudo dpkg -i "$pkg" \
+      || { warn "AWS Session Manager Plugin install failed."; FAILED_PKGS+=("session-manager-plugin"); }
+  elif [[ "$DISTRO_FAMILY" == "rhel" ]]; then
+    local slug="linux_64bit"
+    [[ "$ARCH" == "arm64" ]] && slug="linux_arm64"
+    url="https://s3.amazonaws.com/session-manager-downloads/plugin/latest/${slug}/session-manager-plugin.rpm"
+    sudo "$PKG_MANAGER" install -y "$url" \
+      || { warn "AWS Session Manager Plugin install failed."; FAILED_PKGS+=("session-manager-plugin"); }
+  else
+    warn "AWS Session Manager Plugin: unsupported distro family — skipping."
+  fi
+  rm -rf "$tmpdir"
+}
+install_session_manager_plugin
+
 # ── Azure ──────────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}  Azure${RESET}"
 safe_pkg_install azure-cli "Azure CLI"

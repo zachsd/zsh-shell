@@ -359,6 +359,7 @@ if ($SkipTools) {
     # -- AWS -------------------------------------------------------------------
     Write-Section "AWS"
     Install-WingetPackage 'Amazon.AWSCLI' "AWS CLI v2" aws
+    Install-WingetPackage 'Amazon.SessionManagerPlugin' "AWS Session Manager Plugin" session-manager-plugin
     Install-ScoopPackage  aws-iam-authenticator "AWS IAM Authenticator" aws-iam-authenticator
     Install-ScoopPackage  eksctl "eksctl (EKS)" eksctl
 

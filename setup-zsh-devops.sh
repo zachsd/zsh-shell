@@ -189,6 +189,7 @@ echo -e "\n${BOLD}  AWS${RESET}"
 safe_brew_install awscli                "AWS CLI v2"
 safe_brew_install aws-iam-authenticator "AWS IAM Authenticator"
 safe_brew_install eksctl                "eksctl (EKS)"
+safe_cask_install session-manager-plugin "AWS Session Manager Plugin"
 
 echo -e "\n${BOLD}  Azure${RESET}"
 safe_brew_install azure-cli             "Azure CLI"
