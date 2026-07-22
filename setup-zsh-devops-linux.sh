@@ -910,6 +910,14 @@ zstyle ':autocomplete:*' delay 0.05           # fast response (seconds)
 zstyle ':autocomplete:history-incremental-search-backward:*' list-lines 8
 zstyle ':autocomplete:history-search:*' list-lines 8
 
+# Show more completions before they get cut off.
+# zsh-autocomplete caps real-time listings at 16 lines by default, which
+# truncates commands that have many options. Scale the cap to the terminal
+# height (2/3 of the screen) so long option lists stay visible, while still
+# leaving room for the prompt. zsh additionally caps this to what fits on
+# screen, so it never overflows.
+zstyle -e ':autocomplete:*' list-lines 'reply=( $(( LINES * 2 / 3 )) )'
+
 # ------------------------------------------------------------------------------
 # oh-my-zsh
 # ------------------------------------------------------------------------------
@@ -966,6 +974,10 @@ source "$ZSH/oh-my-zsh.sh"
 # Must be configured after oh-my-zsh.sh (which calls compinit and creates the
 # menuselect keymap).
 zstyle ':completion:*' menu select
+# When a list is still longer than the screen, page/scroll it (with a position
+# indicator) instead of silently truncating the options.
+zstyle ':completion:*' list-prompt   '%SAt %p: Tab for more, / to search%s'
+zstyle ':completion:*' select-prompt '%SScrolling: line %l — %p%s'
 # Tab enters menu-select mode; Shift-Tab enters it going backwards.
 bindkey '\t' menu-select "$terminfo[kcbt]" menu-select
 # While inside the menu: Tab advances to the next option,
