@@ -376,21 +376,27 @@ plugins=(
 source "\$ZSH/oh-my-zsh.sh"
 
 # ------------------------------------------------------------------------------
-# Completion menu — Tab cycles through options, Enter selects
+# Completion menu — Tab opens a navigable list; type to search, Enter selects
 # ------------------------------------------------------------------------------
-# Enable interactive menu-select so completions are shown as a navigable list.
-# Must be configured after oh-my-zsh.sh (which calls compinit and creates the
-# menuselect keymap).
+# oh-my-zsh.sh (above) runs compinit and loads zsh/complist, which is what
+# provides the \`menu-select\` widget and the \`menuselect\` keymap used below.
 zstyle ':completion:*' menu select
-# When a list is still longer than the screen, page/scroll it (with a position
-# indicator) instead of silently truncating the options.
-zstyle ':completion:*' list-prompt   '%SAt %p: Tab for more, / to search%s'
-zstyle ':completion:*' select-prompt '%SScrolling: line %l — %p%s'
-# Tab enters menu-select mode; Shift-Tab enters it going backwards.
+# Tab opens an interactive menu of every match; Shift-Tab opens it in reverse.
 bindkey '\t' menu-select "\$terminfo[kcbt]" menu-select
-# While inside the menu: Tab advances to the next option,
-# Shift-Tab goes to the previous option. Enter (built-in) confirms selection.
+# Inside the menu:
+#   Tab / Shift-Tab   next / previous match — scrolls lists taller than the screen
+#   /                 incremental search: type to jump straight to a match. This
+#                     is what makes tools with dozens of subcommands (kubectl,
+#                     aws, az, terraform, …) navigable without endless tabbing.
+#   Enter             confirm the highlighted match
 bindkey -M menuselect '\t' menu-complete "\$terminfo[kcbt]" reverse-menu-complete
+bindkey -M menuselect '/' history-incremental-search-forward
+# Position indicator shown while browsing a menu taller than the screen; it also
+# advertises the '/' search shortcut. Set at the ':default' context so it wins
+# over zsh-autocomplete's built-in indicator. (zsh-autocomplete strips plain
+# 'menu' and 'list-prompt' styles on every prompt, so what actually sticks is the
+# key bindings above plus this ':default' select-prompt.)
+zstyle ':completion:*:default' select-prompt '%F{black}%K{12} %l (%p)  ·  / search  ·  Enter select %f%k'
 
 # ------------------------------------------------------------------------------
 # Arrow keys — restore up/down to standard history cycling
