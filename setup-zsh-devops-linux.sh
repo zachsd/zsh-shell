@@ -37,7 +37,8 @@ DISTRO_ID=""      # e.g. "ubuntu", "debian", "fedora", "centos", "rhel", "almali
 DISTRO_VERSION="" # e.g. "22.04", "9"
 
 # Populated by detect_arch():
-ARCH=""  # "amd64" | "arm64"
+ARCH=""      # Go-style: "amd64" | "arm64"
+ARCH_ALT=""  # target-triple style: "x86_64" | "aarch64" (some projects use this)
 
 # Background sudo keepalive PID
 SUDO_KEEPALIVE_PID=""
@@ -93,12 +94,12 @@ detect_distro() {
 
 detect_arch() {
   case "$(uname -m)" in
-    x86_64)  ARCH="amd64" ;;
-    aarch64) ARCH="arm64" ;;
-    armv7l)  ARCH="arm"   ;;
-    *)       ARCH="$(uname -m)"; warn "Unrecognised architecture: $ARCH" ;;
+    x86_64)  ARCH="amd64"; ARCH_ALT="x86_64"  ;;
+    aarch64) ARCH="arm64"; ARCH_ALT="aarch64" ;;
+    armv7l)  ARCH="arm";   ARCH_ALT="armv7"   ;;
+    *)       ARCH="$(uname -m)"; ARCH_ALT="$ARCH"; warn "Unrecognised architecture: $ARCH" ;;
   esac
-  log "Architecture: $ARCH"
+  log "Architecture: $ARCH (alt: $ARCH_ALT)"
 }
 
 require_sudo() {
@@ -650,12 +651,13 @@ if ! safe_pkg_install helm "Helm" 2>/dev/null && ! command -v helm &>/dev/null; 
 fi
 
 # kubectx + kubens — GitHub release (separate tar.gz assets)
+# kubectx/kubens assets use x86_64 (not amd64) on Intel — match both spellings
 install_github_release "ahmetb/kubectx" \
-  "kubectx_v[0-9].*_linux_${ARCH}\.tar\.gz" \
+  "kubectx_v[0-9].*_linux_(${ARCH}|${ARCH_ALT})\.tar\.gz" \
   "/usr/local/bin/kubectx" \
   "kubectx"
 install_github_release "ahmetb/kubectx" \
-  "kubens_v[0-9].*_linux_${ARCH}\.tar\.gz" \
+  "kubens_v[0-9].*_linux_(${ARCH}|${ARCH_ALT})\.tar\.gz" \
   "/usr/local/bin/kubens" \
   "kubens"
 
@@ -739,8 +741,9 @@ install_eza() {
   elif [[ "$DISTRO_FAMILY" == "rhel" ]]; then
     sudo "$PKG_MANAGER" install -y -q eza 2>/dev/null && return 0
   fi
+  # eza release assets use the Rust target triple, e.g. eza_x86_64-unknown-linux-gnu.tar.gz
   install_github_release "eza-community/eza" \
-    "eza_linux_${ARCH}\.tar\.gz" \
+    "eza_(${ARCH}|${ARCH_ALT})-unknown-linux-gnu\.tar\.gz" \
     "/usr/local/bin/eza" \
     "eza (modern ls)"
 }
@@ -754,8 +757,9 @@ install_zoxide() {
   fi
   safe_pkg_install zoxide "zoxide (smart cd)"
   command -v zoxide &>/dev/null && return 0
+  # Match the arch dynamically (was hardcoded x86_64, which failed on arm64)
   install_github_release "ajeetdsouza/zoxide" \
-    "zoxide-[0-9].*-x86_64-unknown-linux-musl\.tar\.gz" \
+    "zoxide-[0-9].*-(${ARCH}|${ARCH_ALT})-unknown-linux-musl\.tar\.gz" \
     "/usr/local/bin/zoxide" \
     "zoxide (smart cd)"
 }
@@ -824,9 +828,10 @@ fi
 safe_pkg_install tmux    "tmux"
 safe_pkg_install htop    "htop"
 
-# bottom (btm) — GitHub release (not widely packaged)
+# bottom (btm) — GitHub release (not widely packaged).
+# Assets use the Rust target triple, e.g. bottom_x86_64-unknown-linux-gnu.tar.gz
 install_github_release "ClementTsang/bottom" \
-  "bottom_linux_${ARCH}\.tar\.gz" \
+  "bottom_(${ARCH}|${ARCH_ALT})-unknown-linux-gnu\.tar\.gz" \
   "/usr/local/bin/btm" \
   "bottom (btm — system monitor)"
 
@@ -998,15 +1003,14 @@ bindkey "$terminfo[kcud1]" down-line-or-history  # Down arrow → next command
 # ------------------------------------------------------------------------------
 if command -v oh-my-posh &>/dev/null; then
   _OMP_CONFIG="$HOME/.config/oh-my-posh/atomic.omp.json"
-  if [[ ! -f "$_OMP_CONFIG" ]]; then
-    mkdir -p "$(dirname "$_OMP_CONFIG")"
-    curl -fsSL "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/atomic.omp.json" \
-         -o "$_OMP_CONFIG" 2>/dev/null || true
-  fi
+  # Never fetch over the network here — interactive shell startup must not block
+  # on I/O (a flaky/offline network would hang every new prompt). The installer
+  # downloads the theme; if it's somehow absent, fall back to the built-in
+  # default prompt silently.
   if [[ -f "$_OMP_CONFIG" ]]; then
     eval "$(oh-my-posh init zsh --config "$_OMP_CONFIG")"
   else
-    eval "$(oh-my-posh init zsh)"   # last-resort default
+    eval "$(oh-my-posh init zsh)"   # theme missing — use built-in default
   fi
 fi
 
@@ -1018,18 +1022,35 @@ export PATH="$HOME/.local/bin:$HOME/bin:/usr/local/bin:$PATH"
 # ------------------------------------------------------------------------------
 # Tool completions
 # ------------------------------------------------------------------------------
-# kubectl
-command -v kubectl   &>/dev/null && source <(kubectl completion zsh)
+# Each `tool completion zsh` forks the binary and evaluates its output — often
+# 100–400ms *per tool* on EVERY shell startup. Instead, cache the generated
+# script to disk and re-fork only when the cache is missing/empty or older than
+# the binary (i.e. after a tool upgrade); otherwise just source the cached file,
+# which costs a few ms. These are sourced after oh-my-zsh.sh (post-compinit),
+# exactly as before, so `compdef` calls inside them still work.
+_zsh_comp_cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/completions"
+mkdir -p "$_zsh_comp_cache"
+
+_load_comp() {
+  # _load_comp <cache-name> <command> [args...]
+  local out="$_zsh_comp_cache/$1.zsh"; shift
+  local bin; bin=$(command -v "$1" 2>/dev/null) || return 0
+  if [[ ! -s "$out" || "$bin" -nt "$out" ]]; then
+    { "$@" > "$out" 2>/dev/null && [[ -s "$out" ]]; } || { rm -f "$out"; return 0; }
+  fi
+  source "$out"
+}
+
+_load_comp kubectl kubectl completion zsh
+_load_comp helm    helm    completion zsh
+_load_comp oc      oc      completion zsh
+_load_comp eksctl  eksctl  completion zsh
+_load_comp gh      gh      completion -s zsh
+unset -f _load_comp
+unset _zsh_comp_cache
+
 # kubecolor: inherit kubectl completions via compdef
 command -v kubecolor &>/dev/null && compdef kubecolor=kubectl
-# helm
-command -v helm       &>/dev/null && source <(helm completion zsh)
-# oc (OpenShift)
-command -v oc         &>/dev/null && source <(oc completion zsh)
-# eksctl
-command -v eksctl     &>/dev/null && source <(eksctl completion zsh)
-# gh (GitHub CLI)
-command -v gh         &>/dev/null && source <(gh completion -s zsh)
 # AWS
 command -v aws_completer &>/dev/null && complete -C "$(command -v aws_completer)" aws
 # Terraform (built-in)
@@ -1073,7 +1094,12 @@ export FZF_ALT_C_COMMAND="fd --type d --hidden --follow --exclude .git"
 # ------------------------------------------------------------------------------
 # zsh-autosuggestions
 # ------------------------------------------------------------------------------
-ZSH_AUTOSUGGEST_STRATEGY=(history completion)
+# 'history' only: the 'completion' strategy invokes the completion engine on
+# every keystroke to build a suggestion, which is noticeably heavy layered on
+# zsh-autocomplete + syntax-highlighting. History-based suggestions are far
+# cheaper and cover the vast majority of cases. Add 'completion' back if you
+# specifically want suggestions for never-run commands.
+ZSH_AUTOSUGGEST_STRATEGY=(history)
 ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE="fg=244"
 ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=50
 ZSH_AUTOSUGGEST_USE_ASYNC=1

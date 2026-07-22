@@ -386,21 +386,14 @@ bindkey "\$terminfo[kcud1]" down-line-or-history  # Down arrow → next command
 # ------------------------------------------------------------------------------
 if command -v oh-my-posh &>/dev/null; then
   _OMP_CONFIG="${OMP_THEME_PATH}"
+  # Never fetch over the network here — interactive shell startup must not block
+  # on I/O (a flaky/offline network would hang every new prompt). The installer
+  # downloads the theme; if it's somehow absent, fall back to the built-in
+  # default prompt silently.
   if [[ -f "\$_OMP_CONFIG" ]]; then
     eval "\$(oh-my-posh init zsh --config "\$_OMP_CONFIG")"
   else
-    # Fallback: download atomic theme directly
-    _OMP_FALLBACK="\$HOME/.config/oh-my-posh/atomic.omp.json"
-    if [[ ! -f "\$_OMP_FALLBACK" ]]; then
-      mkdir -p "\$(dirname "\$_OMP_FALLBACK")"
-      curl -fsSL "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/atomic.omp.json" \
-           -o "\$_OMP_FALLBACK" 2>/dev/null || true
-    fi
-    if [[ -f "\$_OMP_FALLBACK" ]]; then
-      eval "\$(oh-my-posh init zsh --config "\$_OMP_FALLBACK")"
-    else
-      eval "\$(oh-my-posh init zsh)"   # last-resort default
-    fi
+    eval "\$(oh-my-posh init zsh)"   # theme missing — use built-in default
   fi
 fi
 
@@ -413,19 +406,36 @@ export PATH="\$HOME/.local/bin:\$HOME/bin:\$PATH"
 # ------------------------------------------------------------------------------
 # Tool completions
 # ------------------------------------------------------------------------------
-# kubectl
-command -v kubectl   &>/dev/null && source <(kubectl completion zsh)
+# Each `tool completion zsh` forks the binary and evaluates its output — often
+# 100–400ms *per tool* on EVERY shell startup. Instead, cache the generated
+# script to disk and re-fork only when the cache is missing/empty or older than
+# the binary (i.e. after a tool upgrade); otherwise just source the cached file,
+# which costs a few ms. These are sourced after oh-my-zsh.sh (post-compinit),
+# exactly as before, so `compdef` calls inside them still work.
+_zsh_comp_cache="\${XDG_CACHE_HOME:-\$HOME/.cache}/zsh/completions"
+mkdir -p "\$_zsh_comp_cache"
+
+_load_comp() {
+  # _load_comp <cache-name> <command> [args...]
+  local out="\$_zsh_comp_cache/\$1.zsh"; shift
+  local bin; bin=\$(command -v "\$1" 2>/dev/null) || return 0
+  if [[ ! -s "\$out" || "\$bin" -nt "\$out" ]]; then
+    { "\$@" > "\$out" 2>/dev/null && [[ -s "\$out" ]]; } || { rm -f "\$out"; return 0; }
+  fi
+  source "\$out"
+}
+
+_load_comp kubectl kubectl completion zsh
+_load_comp helm    helm    completion zsh
+_load_comp oc      oc      completion zsh
+_load_comp eksctl  eksctl  completion zsh
+_load_comp gh      gh      completion -s zsh
+unset -f _load_comp
+unset _zsh_comp_cache
+
 # kubecolor: inherit kubectl completions via compdef (do NOT alias kubectl itself —
 # completion scripts define a kubectl() function which conflicts with aliases)
 command -v kubecolor &>/dev/null && compdef kubecolor=kubectl
-# helm
-command -v helm       &>/dev/null && source <(helm completion zsh)
-# oc (OpenShift)
-command -v oc         &>/dev/null && source <(oc completion zsh)
-# eksctl
-command -v eksctl     &>/dev/null && source <(eksctl completion zsh)
-# gh (GitHub CLI)
-command -v gh         &>/dev/null && source <(gh completion -s zsh)
 # AWS
 command -v aws_completer &>/dev/null && complete -C "\$(command -v aws_completer)" aws
 # Terraform (built-in)
@@ -460,7 +470,12 @@ export FZF_ALT_C_COMMAND="fd --type d --hidden --follow --exclude .git"
 # ------------------------------------------------------------------------------
 # zsh-autosuggestions
 # ------------------------------------------------------------------------------
-ZSH_AUTOSUGGEST_STRATEGY=(history completion)
+# 'history' only: the 'completion' strategy invokes the completion engine on
+# every keystroke to build a suggestion, which is noticeably heavy layered on
+# zsh-autocomplete + syntax-highlighting. History-based suggestions are far
+# cheaper and cover the vast majority of cases. Add 'completion' back if you
+# specifically want suggestions for never-run commands.
+ZSH_AUTOSUGGEST_STRATEGY=(history)
 ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE="fg=244"
 ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=50
 ZSH_AUTOSUGGEST_USE_ASYNC=1
