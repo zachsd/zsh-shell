@@ -344,6 +344,17 @@ plugins=(
   zsh-autocomplete
 )
 
+# zsh-autocomplete's async worker leaks a file descriptor on every keystroke
+# (upstream bug marlonrichert/zsh-autocomplete#294 / #156). After ~256 of them a
+# shell hits its open-file limit and starts erroring with
+#   .autocomplete:async:wait:sysopen: can't open file /dev/fd/255
+# after which input is corrupted until you restart. Disabling the async module
+# runs completion synchronously and sidesteps the leaking machinery entirely.
+# zsh-autocomplete gates each module on a "zstyle -T :autocomplete:<mod> enabled"
+# test, so we set that style false for the async module. Must be set BEFORE the
+# plugin loads (below), since the module wiring happens at load time.
+zstyle ':autocomplete:async' enabled no
+
 source "\$ZSH/oh-my-zsh.sh"
 
 # ------------------------------------------------------------------------------
