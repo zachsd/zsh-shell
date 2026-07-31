@@ -1083,14 +1083,24 @@ zsh_completion_tools=(
 _zsh_comp_cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/completions"
 mkdir -p "$_zsh_comp_cache"
 for _entry in "${zsh_completion_tools[@]}"; do
-  _name="${_entry%%|*}"                 # text before the first '|'
-  _cmd="${_entry#*|}"                   # the generator command after it
-  _binpath=$(command -v "${_cmd%% *}" 2>/dev/null) || continue   # tool present?
+  _name="${_entry%%|*}"                 # cache name (text before the first '|')
+  _cmd="${_entry#*|}"                   # generator command (text after it)
+  # Only accept a plain filename as the cache name, so a stray '/' or '..' in an
+  # edited entry can never write the cache file outside its directory.
+  if [[ -z "$_name" || "$_name" == */* || "$_name" == ".." ]]; then
+    print -u2 "zshrc: skipping completion entry with invalid name: '$_name'"
+    continue
+  fi
+  # Split the generator into an argv array (respecting quotes) and run it
+  # directly — no eval, so nothing in the entry is re-interpreted as shell.
+  _argv=( ${(z)_cmd} )
+  (( $#_argv )) || continue
+  _binpath=$(command -v "${_argv[1]}" 2>/dev/null) || continue   # tool present?
   _out="$_zsh_comp_cache/$_name.zsh"
   if [[ ! -s "$_out" || "$_binpath" -nt "$_out" ]]; then
     # Generate to a temp file and only replace the cache on success, so a failed
     # run (or a race between two starting shells) never clobbers a good cache.
-    if eval "$_cmd" > "$_out.tmp.$$" 2>/dev/null && [[ -s "$_out.tmp.$$" ]]; then
+    if "${_argv[@]}" > "$_out.tmp.$$" 2>/dev/null && [[ -s "$_out.tmp.$$" ]]; then
       mv -f "$_out.tmp.$$" "$_out"
     else
       rm -f "$_out.tmp.$$"
@@ -1098,7 +1108,7 @@ for _entry in "${zsh_completion_tools[@]}"; do
   fi
   [[ -s "$_out" ]] && source "$_out"
 done
-unset _entry _name _cmd _binpath _out _zsh_comp_cache
+unset _entry _name _cmd _argv _binpath _out _zsh_comp_cache
 
 # kubecolor: inherit kubectl completions via compdef
 command -v kubecolor &>/dev/null && compdef kubecolor=kubectl
