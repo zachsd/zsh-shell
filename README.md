@@ -3,10 +3,11 @@
 Opinionated, one-command setup for a modern **zsh** environment tuned for
 DevOps / cloud / sysadmin work — on both **Linux** and **macOS**.
 
-It installs and configures zsh with [oh-my-zsh], the [oh-my-posh] *atomic*
-prompt, autosuggestions, syntax highlighting, richer completions, a curated set
-of CLI tools (Terraform, AWS/Azure/Kubernetes tooling, and more), and a
-ready-to-use `~/.zshrc` full of aliases and helper functions.
+It installs and configures zsh with [oh-my-zsh] for plugins and completions,
+[oh-my-posh] rendering the git-aware **bubblesextra** prompt, real-time
+autocompletion, autosuggestions, fast syntax highlighting, a curated set of CLI
+tools (Terraform, AWS/Azure/Kubernetes tooling, and more), and a ready-to-use
+`~/.zshrc` full of aliases and helper functions.
 
 ---
 
@@ -45,9 +46,9 @@ bash setup-zsh-devops.sh
 ## What you get
 
 **Shell & prompt**
-- zsh set as your default shell, with oh-my-zsh
-- oh-my-posh `atomic` theme
-- `zsh-autocomplete`, `zsh-autosuggestions`, `zsh-syntax-highlighting`, `zsh-completions`
+- zsh set as your default shell, with oh-my-zsh (plugins + completions)
+- the git-aware `bubblesextra` prompt rendered by [oh-my-posh] (branch + working-tree status in the prompt)
+- `zsh-autocomplete`, `zsh-autosuggestions`, `fast-syntax-highlighting`
 - JetBrainsMono Nerd Font
 
 **Tooling** (best-effort; anything unavailable is reported at the end)
@@ -71,9 +72,10 @@ AWS, Azure, Kubernetes, Helm, Docker, and git, plus network helpers
 
 The generated shell config is built for fast startup:
 
-- Tool completions (kubectl/helm/oc/eksctl/gh) are **cached to disk** and only
-  regenerated after a tool upgrade, instead of forking each binary on every
-  shell launch.
+- Tool completions are driven by an editable `zsh_completion_tools` list in
+  `~/.zshrc` (kubectl/helm/oc/eksctl/gh out of the box — add your own in one
+  line). They're **cached to disk** and only regenerated after a tool upgrade,
+  instead of forking each binary on every shell launch.
 - No network I/O during interactive startup.
 - `PATH` lives in `~/.zshenv` (Linux) / `~/.zprofile` (macOS), de-duplicated via
   `typeset -U`, rather than being re-prepended in `~/.zshrc`.
