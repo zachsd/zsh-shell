@@ -2,8 +2,8 @@
 # ==============================================================================
 # Modern ZSH Environment Setup — DevOps / Cloud / SysAdmin  (Linux)
 # ==============================================================================
-# Tools: oh-my-zsh, oh-my-posh (atomic theme), zsh-autocomplete,
-#        zsh-autosuggestions, zsh-syntax-highlighting, zsh-completions
+# Tools: oh-my-zsh (agnoster theme), zsh-autocomplete, zsh-autosuggestions,
+#        fast-syntax-highlighting
 #
 # Workloads: Terraform, Terragrunt, AWS, Azure, Kubernetes, OpenShift, Helm,
 #            VSCode, plus network/sysadmin diagnostic utilities.
@@ -336,7 +336,7 @@ check_github_rate_limit() {
 # ==============================================================================
 # 1. Preflight
 # ==============================================================================
-header "1 / 9  Preflight checks"
+header "1 / 8  Preflight checks"
 
 [[ "$(uname -s)" == "Linux" ]] || error "This script targets Linux only."
 
@@ -367,7 +367,7 @@ check_github_rate_limit
 # ==============================================================================
 # 2. Package manager setup and external repos
 # ==============================================================================
-header "2 / 9  Package manager setup and external repos"
+header "2 / 8  Package manager setup and external repos"
 
 pkg_update
 
@@ -483,7 +483,7 @@ fi
 # ==============================================================================
 # 3. Nerd Font — JetBrainsMono
 # ==============================================================================
-header "3 / 9  Nerd Font — JetBrainsMono"
+header "3 / 8  Nerd Font — JetBrainsMono"
 
 safe_pkg_install fontconfig "fontconfig (fc-cache)"
 
@@ -549,7 +549,7 @@ warn "  • VSCode:          \"terminal.integrated.fontFamily\": \"JetBrainsMono
 # ==============================================================================
 # 4. ZSH
 # ==============================================================================
-header "4 / 9  ZSH"
+header "4 / 8  ZSH"
 
 safe_pkg_install zsh "ZSH"
 
@@ -572,7 +572,7 @@ log "ZSH $(zsh --version)"
 # ==============================================================================
 # 5. oh-my-zsh
 # ==============================================================================
-header "5 / 9  oh-my-zsh"
+header "5 / 8  oh-my-zsh"
 
 if [[ -d "${HOME}/.oh-my-zsh" ]]; then
   log "oh-my-zsh already installed."
@@ -585,52 +585,21 @@ fi
 # ==============================================================================
 # 6. ZSH plugins (external — cloned into OMZ custom/plugins)
 # ==============================================================================
-header "6 / 9  ZSH plugins"
+header "6 / 8  ZSH plugins"
 
 ZSH_CUSTOM="${ZSH_CUSTOM:-${HOME}/.oh-my-zsh/custom}"
 
-# Load order matters:
-#   zsh-autocomplete  → must source BEFORE compinit (before oh-my-zsh.sh)
-#   zsh-completions   → FPATH addition before compinit
-#   zsh-autosuggestions / zsh-syntax-highlighting → after oh-my-zsh.sh
-clone_or_update_plugin "marlonrichert/zsh-autocomplete"       "${ZSH_CUSTOM}/plugins/zsh-autocomplete"
-clone_or_update_plugin "zsh-users/zsh-completions"            "${ZSH_CUSTOM}/plugins/zsh-completions"
-clone_or_update_plugin "zsh-users/zsh-autosuggestions"        "${ZSH_CUSTOM}/plugins/zsh-autosuggestions"
-clone_or_update_plugin "zsh-users/zsh-syntax-highlighting"    "${ZSH_CUSTOM}/plugins/zsh-syntax-highlighting"
+# These are loaded via the plugins=() array in ~/.zshrc. Load order there
+# matters: fast-syntax-highlighting and zsh-autosuggestions must come before
+# zsh-autocomplete (which requires being loaded last).
+clone_or_update_plugin "zsh-users/zsh-autosuggestions"              "${ZSH_CUSTOM}/plugins/zsh-autosuggestions"
+clone_or_update_plugin "zdharma-continuum/fast-syntax-highlighting" "${ZSH_CUSTOM}/plugins/fast-syntax-highlighting"
+clone_or_update_plugin "marlonrichert/zsh-autocomplete"             "${ZSH_CUSTOM}/plugins/zsh-autocomplete"
 
 # ==============================================================================
-# 7. oh-my-posh
+# 7. Tool installation
 # ==============================================================================
-header "7 / 9  oh-my-posh"
-
-OMP_BIN="$HOME/.local/bin/oh-my-posh"
-OMP_THEME_DIR="$HOME/.config/oh-my-posh"
-OMP_THEME_PATH="${OMP_THEME_DIR}/atomic.omp.json"
-
-if [[ -x "$OMP_BIN" ]]; then
-  log "oh-my-posh already installed — skipping."
-else
-  log "Installing oh-my-posh → $HOME/.local/bin …"
-  curl -fsSL https://ohmyposh.dev/install.sh | bash -s -- -d "$HOME/.local/bin" \
-    || { warn "oh-my-posh install.sh failed."; FAILED_PKGS+=("oh-my-posh"); }
-fi
-
-mkdir -p "$OMP_THEME_DIR"
-
-if [[ -f "$OMP_THEME_PATH" ]]; then
-  log "atomic theme already present."
-else
-  log "Downloading atomic theme …"
-  curl -fsSL \
-    "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/atomic.omp.json" \
-    -o "$OMP_THEME_PATH" \
-    || warn "Failed to download atomic theme — oh-my-posh will use its default."
-fi
-
-# ==============================================================================
-# 8. Tool installation
-# ==============================================================================
-header "8 / 9  Installing tools"
+header "7 / 8  Installing tools"
 
 # GitHub-release binaries (the `pbg …` calls below) download and install in
 # parallel; their per-tool logs interleave and their failures are collected via
@@ -995,7 +964,7 @@ wait_downloads
 # ==============================================================================
 # 9. Generate ~/.zshenv and ~/.zshrc
 # ==============================================================================
-header "9 / 9  Writing ~/.zshenv and ~/.zshrc"
+header "8 / 8  Writing ~/.zshenv and ~/.zshrc"
 
 # --- ~/.zshenv : PATH lives here so it applies to ALL shells (login,
 #     interactive, and scripts) and is de-duplicated via `typeset -U`.
@@ -1032,46 +1001,26 @@ cat > "$ZSHRC" << 'ZSHRC_EOF'
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
-# zsh-autocomplete  ← MUST be sourced BEFORE compinit / oh-my-zsh.sh
-# ------------------------------------------------------------------------------
-ZSH_AUTOCOMPLETE_PLUGIN="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-autocomplete/zsh-autocomplete.plugin.zsh"
-[[ -f "$ZSH_AUTOCOMPLETE_PLUGIN" ]] && source "$ZSH_AUTOCOMPLETE_PLUGIN"
-
-# Tune autocomplete behaviour
-zstyle ':autocomplete:*' min-input 1          # start completing after 1 char
-zstyle ':autocomplete:*' delay 0.05           # fast response (seconds)
-zstyle ':autocomplete:history-incremental-search-backward:*' list-lines 8
-zstyle ':autocomplete:history-search:*' list-lines 8
-
-# Show more completions before they get cut off.
-# zsh-autocomplete caps real-time listings at 16 lines by default, which
-# truncates commands that have many options. Scale the cap to the terminal
-# height (2/3 of the screen) so long option lists stay visible, while still
-# leaving room for the prompt. zsh additionally caps this to what fits on
-# screen, so it never overflows.
-zstyle -e ':autocomplete:*' list-lines 'reply=( $(( LINES * 2 / 3 )) )'
-
-# ------------------------------------------------------------------------------
 # oh-my-zsh
 # ------------------------------------------------------------------------------
 export ZSH="$HOME/.oh-my-zsh"
 
-# ZSH_THEME="" — oh-my-posh handles the prompt; OMZ theme is disabled
-ZSH_THEME=""
+# Theme — agnoster is a built-in oh-my-zsh theme that shows the git branch and
+# working-tree status right in the prompt. It needs a powerline/Nerd font (the
+# installer sets up JetBrainsMono Nerd Font). Swap in any other git-aware OMZ
+# theme here if you prefer.
+ZSH_THEME="agnoster"
 
-# Extra completions on FPATH before compinit (called inside oh-my-zsh.sh)
-fpath=("${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-completions/src" $fpath)
-
-# OMZ plugins
-# Note: zsh-autocomplete is sourced above (before compinit).
-#       zsh-autosuggestions and zsh-syntax-highlighting are safe after compinit.
+# Plugins. The last three MUST stay in this order: fast-syntax-highlighting and
+# zsh-autosuggestions load first, then zsh-autocomplete (which requires being
+# loaded after them).
 plugins=(
   # --- Version control ---
   git
 
   # --- Cloud / DevOps ---
-  # NOTE: kubectl plugin omitted — its aliases conflict with our kpf()/etc. functions
-  # and its completion sourcing is handled explicitly below.
+  # NOTE: kubectl plugin omitted — its aliases conflict with our kpf()/etc.
+  # functions; its completion is handled by the cached list further down.
   aws
   helm
   terraform
@@ -1092,55 +1041,21 @@ plugins=(
   jsontools
   urltools
 
-  # --- External (cloned) ---
-  zsh-completions
+  # --- Completion / suggestions / highlighting (keep this order) ---
+  fast-syntax-highlighting
   zsh-autosuggestions
-  zsh-syntax-highlighting
+  zsh-autocomplete
 )
 
 source "$ZSH/oh-my-zsh.sh"
 
 # ------------------------------------------------------------------------------
-# Completion menu — Tab cycles through options, Enter selects
+# Arrow keys — restore up/down to plain history cycling
 # ------------------------------------------------------------------------------
-# Enable interactive menu-select so completions are shown as a navigable list.
-# Must be configured after oh-my-zsh.sh (which calls compinit and creates the
-# menuselect keymap).
-zstyle ':completion:*' menu select
-# When a list is still longer than the screen, page/scroll it (with a position
-# indicator) instead of silently truncating the options.
-zstyle ':completion:*' list-prompt   '%SAt %p: Tab for more, / to search%s'
-zstyle ':completion:*' select-prompt '%SScrolling: line %l — %p%s'
-# Tab enters menu-select mode; Shift-Tab enters it going backwards.
-bindkey '\t' menu-select "$terminfo[kcbt]" menu-select
-# While inside the menu: Tab advances to the next option,
-# Shift-Tab goes to the previous option. Enter (built-in) confirms selection.
-bindkey -M menuselect '\t' menu-complete "$terminfo[kcbt]" reverse-menu-complete
-
-# ------------------------------------------------------------------------------
-# Arrow keys — restore up/down to standard history cycling
-# ------------------------------------------------------------------------------
-# zsh-autocomplete overrides the up/down arrows with a history-search widget.
-# Rebind them here (after oh-my-zsh.sh/compinit) to restore simple one-by-one
-# cycling through previous commands.
+# zsh-autocomplete rebinds Up/Down to an incremental history search. Restore the
+# familiar one-command-at-a-time cycling through previous commands.
 bindkey "$terminfo[kcuu1]" up-line-or-history    # Up arrow → previous command
 bindkey "$terminfo[kcud1]" down-line-or-history  # Down arrow → next command
-
-# ------------------------------------------------------------------------------
-# oh-my-posh — atomic theme
-# ------------------------------------------------------------------------------
-if command -v oh-my-posh &>/dev/null; then
-  _OMP_CONFIG="$HOME/.config/oh-my-posh/atomic.omp.json"
-  # Never fetch over the network here — interactive shell startup must not block
-  # on I/O (a flaky/offline network would hang every new prompt). The installer
-  # downloads the theme; if it's somehow absent, fall back to the built-in
-  # default prompt silently.
-  if [[ -f "$_OMP_CONFIG" ]]; then
-    eval "$(oh-my-posh init zsh --config "$_OMP_CONFIG")"
-  else
-    eval "$(oh-my-posh init zsh)"   # theme missing — use built-in default
-  fi
-fi
 
 # ------------------------------------------------------------------------------
 # PATH — defined in ~/.zshenv (generated by the installer) so it applies to
@@ -1149,44 +1064,41 @@ fi
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
-# Tool completions
+# Tool completions — cached  (★ add your own tools to the list below ★)
 # ------------------------------------------------------------------------------
-# Each `tool completion zsh` forks the binary and evaluates its output — often
-# 100–400ms *per tool* on EVERY shell startup. Instead, cache the generated
-# script to disk and re-fork only when the cache is missing/empty or older than
-# the binary (i.e. after a tool upgrade); otherwise just source the cached file,
-# which costs a few ms. These are sourced after oh-my-zsh.sh (post-compinit),
-# exactly as before, so `compdef` calls inside them still work.
+# Add one entry per tool as  "name|command that prints its zsh completion".
+# Running `tool completion zsh` forks the binary on every shell startup
+# (100–400ms each), so instead the generated script is cached under
+# ~/.cache/zsh/completions and only regenerated when the tool's binary is newer
+# than the cache (e.g. after an upgrade). To add a tool, append a line here —
+# nothing else to change.
+zsh_completion_tools=(
+  "kubectl|kubectl completion zsh"
+  "helm|helm completion zsh"
+  "oc|oc completion zsh"
+  "eksctl|eksctl completion zsh"
+  "gh|gh completion -s zsh"
+)
+
 _zsh_comp_cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/completions"
 mkdir -p "$_zsh_comp_cache"
-
-# Namespaced so `unset -f` below can't clobber a user-defined function.
-__zdo_load_comp() {
-  # __zdo_load_comp <cache-name> <command> [args...]
-  local out="$_zsh_comp_cache/$1.zsh"; shift
-  local bin; bin=$(command -v "$1" 2>/dev/null) || return 0
-  if [[ ! -s "$out" || "$bin" -nt "$out" ]]; then
-    # Generate to a per-process temp file and atomically mv into place ONLY on
-    # success. A failed generation or a concurrent shell startup can then never
-    # corrupt or clobber a previously-good cache — we simply keep the old one.
-    local tmp="$out.tmp.$$"
-    if "$@" > "$tmp" 2>/dev/null && [[ -s "$tmp" ]]; then
-      mv -f "$tmp" "$out"
+for _entry in "${zsh_completion_tools[@]}"; do
+  _name="${_entry%%|*}"                 # text before the first '|'
+  _cmd="${_entry#*|}"                   # the generator command after it
+  _binpath=$(command -v "${_cmd%% *}" 2>/dev/null) || continue   # tool present?
+  _out="$_zsh_comp_cache/$_name.zsh"
+  if [[ ! -s "$_out" || "$_binpath" -nt "$_out" ]]; then
+    # Generate to a temp file and only replace the cache on success, so a failed
+    # run (or a race between two starting shells) never clobbers a good cache.
+    if eval "$_cmd" > "$_out.tmp.$$" 2>/dev/null && [[ -s "$_out.tmp.$$" ]]; then
+      mv -f "$_out.tmp.$$" "$_out"
     else
-      rm -f "$tmp"
-      [[ -s "$out" ]] || return 0   # generation failed and no cache to reuse
+      rm -f "$_out.tmp.$$"
     fi
   fi
-  source "$out"
-}
-
-__zdo_load_comp kubectl kubectl completion zsh
-__zdo_load_comp helm    helm    completion zsh
-__zdo_load_comp oc      oc      completion zsh
-__zdo_load_comp eksctl  eksctl  completion zsh
-__zdo_load_comp gh      gh      completion -s zsh
-unset -f __zdo_load_comp
-unset _zsh_comp_cache
+  [[ -s "$_out" ]] && source "$_out"
+done
+unset _entry _name _cmd _binpath _out _zsh_comp_cache
 
 # kubecolor: inherit kubectl completions via compdef
 command -v kubecolor &>/dev/null && compdef kubecolor=kubectl
@@ -1244,10 +1156,10 @@ ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=50
 ZSH_AUTOSUGGEST_USE_ASYNC=1
 
 # ------------------------------------------------------------------------------
-# zsh-syntax-highlighting
+# fast-syntax-highlighting
 # ------------------------------------------------------------------------------
-ZSH_HIGHLIGHT_HIGHLIGHTERS=(main brackets pattern)
-ZSH_HIGHLIGHT_PATTERNS+=('rm -rf *' 'fg=white,bold,bg=red')   # highlight dangerous rm
+# Works out of the box — no configuration required. To change its colour theme
+# interactively, run:  fast-theme <theme>   (list options with: fast-theme -l)
 
 # ------------------------------------------------------------------------------
 # Editor / Pager
@@ -1693,8 +1605,7 @@ log ".zshrc written."
 header "Setup complete!"
 
 echo ""
-echo -e "${BOLD}Theme used:${RESET}             atomic (oh-my-posh)"
-echo -e "${BOLD}Theme path:${RESET}             ${OMP_THEME_PATH}"
+echo -e "${BOLD}Theme used:${RESET}             agnoster (oh-my-zsh built-in, git-aware)"
 echo -e "${BOLD}Font required:${RESET}          JetBrainsMono Nerd Font Mono"
 echo ""
 echo -e "${BOLD}${CYAN}Next steps:${RESET}"
