@@ -3,10 +3,11 @@
 Opinionated, one-command setup for a modern **zsh** environment tuned for
 DevOps / cloud / sysadmin work — on both **Linux** and **macOS**.
 
-It installs and configures zsh with [oh-my-zsh], the git-aware **agnoster**
-theme, real-time autocompletion, autosuggestions, fast syntax highlighting, a
-curated set of CLI tools (Terraform, AWS/Azure/Kubernetes tooling, and more),
-and a ready-to-use `~/.zshrc` full of aliases and helper functions.
+It installs and configures zsh with [oh-my-zsh] for plugins and completions,
+[oh-my-posh] rendering the git-aware **bubblesextra** prompt, real-time
+autocompletion, autosuggestions, fast syntax highlighting, a curated set of CLI
+tools (Terraform, AWS/Azure/Kubernetes tooling, and more), and a ready-to-use
+`~/.zshrc` full of aliases and helper functions.
 
 ---
 
@@ -45,8 +46,8 @@ bash setup-zsh-devops.sh
 ## What you get
 
 **Shell & prompt**
-- zsh set as your default shell, with oh-my-zsh
-- the built-in git-aware `agnoster` theme (branch + working-tree status in the prompt)
+- zsh set as your default shell, with oh-my-zsh (plugins + completions)
+- the git-aware `bubblesextra` prompt rendered by [oh-my-posh] (branch + working-tree status in the prompt)
 - `zsh-autocomplete`, `zsh-autosuggestions`, `fast-syntax-highlighting`
 - JetBrainsMono Nerd Font
 
@@ -135,4 +136,5 @@ The Linux installer also honors `MAX_PARALLEL_DOWNLOADS` (default `6`).
 | `setup-zsh-devops.sh` | Full setup for macOS (Homebrew). |
 
 [oh-my-zsh]: https://ohmyz.sh/
+[oh-my-posh]: https://ohmyposh.dev/
 [Homebrew]: https://brew.sh/
