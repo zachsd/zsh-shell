@@ -1081,6 +1081,18 @@ bindkey "$terminfo[kcuu1]" up-line-or-history    # Up arrow → previous command
 bindkey "$terminfo[kcud1]" down-line-or-history  # Down arrow → next command
 
 # ------------------------------------------------------------------------------
+# Tab — cycle through completion matches
+# ------------------------------------------------------------------------------
+# By default zsh-autocomplete binds Tab to insert the longest common match and
+# stop there. Rebind it (after the plugin has loaded, like the arrow keys above)
+# so Tab opens the completion menu and repeated Tab / Shift-Tab cycle forward /
+# backward through the matches. `menuselect` is the keymap active in the menu.
+bindkey              '^I' menu-select          # Tab       → open menu / next match
+bindkey "$terminfo[kcbt]" menu-select          # Shift-Tab → open menu / prev match
+bindkey -M menuselect '^I'               menu-complete          # Tab in menu → next
+bindkey -M menuselect "$terminfo[kcbt]"  reverse-menu-complete  # Shift-Tab   → prev
+
+# ------------------------------------------------------------------------------
 # oh-my-posh — prompt (bubblesextra theme)
 # ------------------------------------------------------------------------------
 # oh-my-posh owns the prompt (oh-my-zsh's own theme is disabled via ZSH_THEME=""
