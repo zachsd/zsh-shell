@@ -2,7 +2,7 @@
 # ==============================================================================
 # Modern ZSH Environment Setup — DevOps / Cloud / SysAdmin  (Linux)
 # ==============================================================================
-# Tools: oh-my-zsh + oh-my-posh (bubblesextra theme), zsh-autocomplete,
+# Tools: oh-my-zsh + oh-my-posh (bubblesextra theme), native Tab completion,
 #        zsh-autosuggestions, fast-syntax-highlighting
 #
 # Workloads: Terraform, Terragrunt, AWS, Azure, Kubernetes, OpenShift, Helm,
@@ -336,6 +336,7 @@ check_github_rate_limit() {
 # ==============================================================================
 # 1. Preflight
 # ==============================================================================
+if [[ ${ZSH_SETUP_CONFIG_ONLY:-0} != 1 ]]; then
 header "1 / 8  Preflight checks"
 
 [[ "$(uname -s)" == "Linux" ]] || error "This script targets Linux only."
@@ -612,12 +613,9 @@ header "6 / 8  ZSH plugins"
 
 ZSH_CUSTOM="${ZSH_CUSTOM:-${HOME}/.oh-my-zsh/custom}"
 
-# These are loaded via the plugins=() array in ~/.zshrc. Load order there
-# matters: fast-syntax-highlighting and zsh-autosuggestions must come before
-# zsh-autocomplete (which requires being loaded last).
+# History suggestions and highlighting keep the interface responsive.
 clone_or_update_plugin "zsh-users/zsh-autosuggestions"              "${ZSH_CUSTOM}/plugins/zsh-autosuggestions"
 clone_or_update_plugin "zdharma-continuum/fast-syntax-highlighting" "${ZSH_CUSTOM}/plugins/fast-syntax-highlighting"
-clone_or_update_plugin "marlonrichert/zsh-autocomplete"             "${ZSH_CUSTOM}/plugins/zsh-autocomplete"
 
 # ==============================================================================
 # 7. Tool installation
@@ -984,6 +982,8 @@ install_vscode
 log "Waiting for parallel release-binary installs to finish …"
 wait_downloads
 
+fi # dependency installation
+
 # ==============================================================================
 # 9. Generate ~/.zshenv and ~/.zshrc
 # ==============================================================================
@@ -991,8 +991,9 @@ header "8 / 8  Writing ~/.zshenv and ~/.zshrc"
 
 # --- ~/.zshenv : PATH lives here so it applies to ALL shells (login,
 #     interactive, and scripts) and is de-duplicated via `typeset -U`.
-ZSHENV="${HOME}/.zshenv"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+if [[ ${ZSH_SETUP_CONFIG_ONLY:-0} != 1 ]]; then
+ZSHENV="${HOME}/.zshenv"
 if [[ -f "$ZSHENV" ]]; then
   cp "$ZSHENV" "${ZSHENV}.backup.${TIMESTAMP}"
   log "Backed up existing .zshenv → ${ZSHENV}.backup.${TIMESTAMP}"
@@ -1008,6 +1009,7 @@ path=("$HOME/.local/bin" "$HOME/bin" "/usr/local/bin" $path)
 export PATH
 ZSHENV_EOF
 log ".zshenv written."
+fi
 
 ZSHRC="${HOME}/.zshrc"
 BACKUP="${HOME}/.zshrc.backup.${TIMESTAMP}"
@@ -1034,74 +1036,40 @@ export ZSH="$HOME/.oh-my-zsh"
 # oh-my-zsh's own prompt instead of oh-my-posh.
 ZSH_THEME=""
 
-# Plugins. The last three MUST stay in this order: fast-syntax-highlighting and
-# zsh-autosuggestions load first, then zsh-autocomplete (which requires being
-# loaded after them).
-plugins=(
-  # --- Version control ---
-  git
+# Keep useful helpers and static completions; tool generators are managed below.
+# dirhistory is intentionally omitted: it claims Option/Alt-arrow shortcuts.
+plugins=(git ansible docker docker-compose sudo colored-man-pages copypath
+         history jsontools urltools zsh-autosuggestions fast-syntax-highlighting)
 
-  # --- Cloud / DevOps ---
-  # NOTE: kubectl plugin omitted — its aliases conflict with our kpf()/etc.
-  # functions; its completion is handled by the cached list further down.
-  aws
-  helm
-  terraform
-  ansible
-  docker
-  docker-compose
-
-  # --- IDE ---
-  vscode
-
-  # --- Shell UX ---
-  sudo
-  colored-man-pages
-  command-not-found
-  copypath
-  dirhistory
-  history
-  jsontools
-  urltools
-
-  # --- Completion / suggestions / highlighting (keep this order) ---
-  fast-syntax-highlighting
-  zsh-autosuggestions
-  zsh-autocomplete
-)
-
-# zsh-autocomplete's async worker leaks a file descriptor on every keystroke
-# (upstream bug marlonrichert/zsh-autocomplete#294 / #156). After ~256 of them a
-# shell hits its open-file limit and starts erroring with
-#   .autocomplete:async:wait:sysopen: can't open file /dev/fd/255
-# after which input is corrupted until you restart. Disabling the async module
-# runs completion synchronously and sidesteps the leaking machinery entirely.
-# zsh-autocomplete gates each module on a "zstyle -T :autocomplete:<mod> enabled"
-# test, so we set that style false for the async module. Must be set BEFORE the
-# plugin loads (below), since the module wiring happens at load time.
-zstyle ':autocomplete:async' enabled no
+# Updates belong to maintenance, never to opening a terminal.
+zstyle ':omz:update' mode disabled
 
 source "$ZSH/oh-my-zsh.sh"
 
-# ------------------------------------------------------------------------------
-# Arrow keys — restore up/down to plain history cycling
-# ------------------------------------------------------------------------------
-# zsh-autocomplete rebinds Up/Down to an incremental history search. Restore the
-# familiar one-command-at-a-time cycling through previous commands.
-bindkey "$terminfo[kcuu1]" up-line-or-history    # Up arrow → previous command
-bindkey "$terminfo[kcud1]" down-line-or-history  # Down arrow → next command
+# Native completion menus, without a completion worker on every keystroke.
+zmodload zsh/complist
+zstyle ':completion:*' menu select
 
-# ------------------------------------------------------------------------------
-# Tab — cycle through completion matches
-# ------------------------------------------------------------------------------
-# By default zsh-autocomplete binds Tab to insert the longest common match and
-# stop there. Rebind it (after the plugin has loaded, like the arrow keys above)
-# so Tab opens the completion menu and repeated Tab / Shift-Tab cycle forward /
-# backward through the matches. `menuselect` is the keymap active in the menu.
-bindkey              '^I' menu-select          # Tab       → open menu / next match
-bindkey "$terminfo[kcbt]" menu-select          # Shift-Tab → open menu / prev match
-bindkey -M menuselect '^I'               menu-complete          # Tab in menu → next
-bindkey -M menuselect "$terminfo[kcbt]"  reverse-menu-complete  # Shift-Tab   → prev
+# Set the editing mode explicitly (EDITOR=vim must not silently select vi mode).
+bindkey -e
+for _map in emacs viins; do
+  bindkey -M "$_map" '^I' expand-or-complete
+  bindkey -M "$_map" '^[[Z' reverse-menu-complete
+  bindkey -M "$_map" '^[[A' up-line-or-history
+  bindkey -M "$_map" '^[[B' down-line-or-history
+  [[ -n ${terminfo[kcuu1]-} ]] && bindkey -M "$_map" "$terminfo[kcuu1]" up-line-or-history
+  [[ -n ${terminfo[kcud1]-} ]] && bindkey -M "$_map" "$terminfo[kcud1]" down-line-or-history
+  # Terminal.app, iTerm2, VS Code, xterm, SSH and tmux variants.
+  for _key in '^[b' '^[[1;3D' '^[[3D' '^[^[[D' '^[O3D' '^[[1;5D'; do
+    bindkey -M "$_map" "$_key" backward-word
+  done
+  for _key in '^[f' '^[[1;3C' '^[[3C' '^[^[[C' '^[O3C' '^[[1;5C'; do
+    bindkey -M "$_map" "$_key" forward-word
+  done
+done
+bindkey -M menuselect '^I' menu-complete
+bindkey -M menuselect '^[[Z' reverse-menu-complete
+unset _map _key
 
 # ------------------------------------------------------------------------------
 # oh-my-posh — prompt (bubblesextra theme)
@@ -1131,15 +1099,8 @@ fi
 # every time this file is re-sourced.
 # ------------------------------------------------------------------------------
 
-# ------------------------------------------------------------------------------
-# Tool completions — cached  (★ add your own tools to the list below ★)
-# ------------------------------------------------------------------------------
-# Add one entry per tool as  "name|command that prints its zsh completion".
-# Running `tool completion zsh` forks the binary on every shell startup
-# (100–400ms each), so instead the generated script is cached under
-# ~/.cache/zsh/completions and only regenerated when the tool's binary is newer
-# than the cache (e.g. after an upgrade). To add a tool, append a line here —
-# nothing else to change.
+# Tool completions are generated only by zsh-refresh-completions.
+# Run it after installing/upgrading tools, then open a new shell.
 zsh_completion_tools=(
   "kubectl|kubectl completion zsh"
   "helm|helm completion zsh"
@@ -1148,35 +1109,49 @@ zsh_completion_tools=(
   "gh|gh completion -s zsh"
 )
 
-_zsh_comp_cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/completions"
-mkdir -p "$_zsh_comp_cache"
-for _entry in "${zsh_completion_tools[@]}"; do
-  _name="${_entry%%|*}"                 # cache name (text before the first '|')
-  _cmd="${_entry#*|}"                   # generator command (text after it)
-  # Only accept a plain filename as the cache name, so a stray '/' or '..' in an
-  # edited entry can never write the cache file outside its directory.
-  if [[ -z "$_name" || "$_name" == */* || "$_name" == ".." ]]; then
-    print -u2 "zshrc: skipping completion entry with invalid name: '$_name'"
-    continue
-  fi
-  # Split the generator into an argv array (respecting quotes) and run it
-  # directly — no eval, so nothing in the entry is re-interpreted as shell.
-  _argv=( ${(z)_cmd} )
-  (( $#_argv )) || continue
-  _binpath=$(command -v "${_argv[1]}" 2>/dev/null) || continue   # tool present?
-  _out="$_zsh_comp_cache/$_name.zsh"
-  if [[ ! -s "$_out" || "$_binpath" -nt "$_out" ]]; then
-    # Generate to a temp file and only replace the cache on success, so a failed
-    # run (or a race between two starting shells) never clobbers a good cache.
-    if "${_argv[@]}" > "$_out.tmp.$$" 2>/dev/null && [[ -s "$_out.tmp.$$" ]]; then
-      mv -f "$_out.tmp.$$" "$_out"
-    else
-      rm -f "$_out.tmp.$$"
+zsh-refresh-completions() {
+  emulate -L zsh
+  local cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/completions"
+  local entry name cmd out tmp
+  local -a argv
+  local failed=0
+  mkdir -p "$cache" || return 1
+  for entry in "${zsh_completion_tools[@]}"; do
+    name=${entry%%|*}
+    cmd=${entry#*|}
+    if [[ -z $name || $name == *[^a-zA-Z0-9_-]* || $entry != *'|'* ]]; then
+      print -u2 "Invalid completion entry: $entry"
+      failed=1
+      continue
     fi
-  fi
-  [[ -s "$_out" ]] && source "$_out"
+    argv=( ${(z)cmd} )
+    (( $#argv )) || continue
+    (( $+commands[${argv[1]}] )) || continue
+    out="$cache/$name.zsh"
+    tmp=$(mktemp "$out.XXXXXX") || return 1
+    if command "${argv[@]}" > "$tmp" && [[ -s $tmp ]] && zsh -n "$tmp"; then
+      mv -f "$tmp" "$out" || { rm -f "$tmp"; failed=1; }
+    else
+      print -u2 "Could not generate $name completion; keeping previous cache."
+      rm -f "$tmp"
+      failed=1
+    fi
+  done
+  return $failed
+}
+
+# Read existing caches only: no tool execution, directory creation or network.
+for _entry in "${zsh_completion_tools[@]}"; do
+  _name=${_entry%%|*}
+  [[ -n $_name && $_name != *[^a-zA-Z0-9_-]* ]] || continue
+  _out="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/completions/$_name.zsh"
+  [[ -s $_out ]] && source "$_out"
 done
-unset _entry _name _cmd _argv _binpath _out _zsh_comp_cache
+unset _entry _name _out
+
+# Bash-style external completers need this bridge even without the AWS plugin.
+autoload -Uz bashcompinit
+bashcompinit
 
 # kubecolor: inherit kubectl completions via compdef
 command -v kubecolor &>/dev/null && compdef kubecolor=kubectl
@@ -1223,11 +1198,7 @@ export FZF_ALT_C_COMMAND="fd --type d --hidden --follow --exclude .git"
 # ------------------------------------------------------------------------------
 # zsh-autosuggestions
 # ------------------------------------------------------------------------------
-# 'history' only: the 'completion' strategy invokes the completion engine on
-# every keystroke to build a suggestion, which is noticeably heavy layered on
-# zsh-autocomplete + syntax-highlighting. History-based suggestions are far
-# cheaper and cover the vast majority of cases. Add 'completion' back if you
-# specifically want suggestions for never-run commands.
+# History suggestions do not invoke the completion engine while typing.
 ZSH_AUTOSUGGEST_STRATEGY=(history)
 ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE="fg=244"
 ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=50
@@ -1673,9 +1644,17 @@ k8senc() { base64 < "$1" | tr -d '\n'; echo; }
 
 # Watch kubectl top
 ktop() { watch -n 3 kubectl top nodes; }
+
+# Machine-specific settings survive installer reruns.
+if [[ -r "$HOME/.zshrc.local" ]]; then source "$HOME/.zshrc.local"; fi
 ZSHRC_EOF
 
 log ".zshrc written."
+log "Run zsh-refresh-completions in a new shell to prepare tool completions."
+if [[ ${ZSH_SETUP_CONFIG_ONLY:-0} == 1 ]]; then
+  log "Configuration updated; existing environment files and packages preserved."
+  exit 0
+fi
 
 # ==============================================================================
 # Final summary
