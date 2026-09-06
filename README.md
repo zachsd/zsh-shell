@@ -70,6 +70,9 @@ bash setup-zsh-devops.sh
 - **Azure:** Azure CLI
 - **Kubernetes / OpenShift:** kubectl, Helm, kubectx/kubens, k9s, kustomize, stern, kubeseal, `oc`, kubecolor
 - **Containers:** Podman, Docker Compose
+- **Agents & worktrees:** [Herdr](https://herdr.dev/docs/install/),
+  [Pi](https://pi.dev/docs/latest), [Worktrunk (`wt`)](https://worktrunk.dev/),
+  [Babysitter](https://github.com/a5c-ai/babysitter/tree/main/packages/babysitter)
 - **Dev:** git, GitHub CLI, jq, yq, fzf, bat, eza, zoxide, ripgrep, fd, tldr, direnv
 - **Network / sysadmin:** nmap, mtr, tcpdump, tshark, httpie, socat, iperf3, whois, and more
 - **VS Code** (where available)
@@ -78,6 +81,41 @@ bash setup-zsh-devops.sh
 AWS, Azure, Kubernetes, Helm, Docker, and git, plus network helpers
 (`sslcheck`, `lookup`, `tcpcheck`, …) and utilities (`mkcd`, `extract`,
 `genpass`, `serve`, …). Your existing `~/.zshrc` is backed up first.
+
+---
+
+## Agent tools
+
+The full macOS, Linux, and Windows installers include these tools:
+
+| Tool | macOS | Linux | Windows |
+| ---- | ----- | ----- | ------- |
+| Herdr | Homebrew `herdr` | Official installer, per-user | Official PowerShell installer |
+| Pi (`pi`) | npm `@earendil-works/pi-coding-agent` | Same | Same |
+| Worktrunk | Homebrew `worktrunk` | Official x86_64/aarch64 musl release | Winget `max-sixty.worktrunk` (`git-wt`) |
+| Babysitter | npm `@a5c-ai/babysitter` | Same | Same |
+
+Pi requires **Node.js 22.19+**; Babysitter requires **Node.js 20+**.
+When Node/npm are missing, setup attempts to install them using Homebrew,
+the Linux package manager, or Scoop's `nodejs-lts`. An existing Node installation
+is preserved. Older Linux distro packages may not meet these requirements;
+install a supported Node.js LTS release and rerun if setup reports a runtime
+failure. Unsupported CPUs or failed installs appear in the failure summary.
+
+npm tools are installed per-user with lifecycle scripts disabled and engine
+requirements enforced: `~/.local` on macOS/Linux and `%APPDATA%/npm` on Windows.
+Existing commands are skipped on reruns. No agents, services, logins, or harness
+plugins are started/configured automatically. Configuration-only mode and
+PowerShell's `-SkipTools` skip these installations.
+
+In zsh, run `zsh-refresh-completions`, then open a new shell to enable Herdr
+completion and Worktrunk's directory-switching wrapper. The wrapper is cached
+with completions, so it adds no generator call to startup; refresh it after
+upgrading Worktrunk. On Windows use `git-wt` (plain `wt` is Windows Terminal),
+and run `git-wt config shell install powershell` after setup/re-generating the
+PowerShell profiles. Start Pi with `pi` and configure its provider with `/login`.
+Babysitter's CLI is installed; harness-specific integration remains a separate
+step following its documentation.
 
 ---
 
@@ -141,7 +179,9 @@ shortcuts to directory navigation instead of word movement.
 Run `python3 tests/test_shell.py` (requires zsh) to exercise both generated
 platform configurations in temporary homes without package installation.
 The checks cover keymaps, completion menus, cold-cache startup, refresh failure
-recovery, invalid cache names, backups, and local overrides.
+recovery, invalid cache names, backups, and local overrides. Run all Python
+checks with `python3 -m unittest discover -s tests`; npm installer helper checks
+for PowerShell run with `pwsh -NoProfile -File tests/test_agent_tools.ps1`.
 
 ---
 
@@ -197,6 +237,7 @@ The Linux installer also honors `MAX_PARALLEL_DOWNLOADS` (default `6`).
 | `install.sh` | OS/shell discovery bootstrap; run via `curl … \| sh`. |
 | `setup-zsh-devops-linux.sh` | Full setup for Linux (apt / dnf / yum). |
 | `setup-zsh-devops.sh` | Full setup for macOS (Homebrew). |
+| `setup-pwsh-devops.ps1` | Windows PowerShell setup (Scoop / Winget). |
 
 [oh-my-zsh]: https://ohmyz.sh/
 [oh-my-posh]: https://ohmyposh.dev/
