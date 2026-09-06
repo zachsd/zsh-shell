@@ -4,8 +4,8 @@ Opinionated, one-command setup for a modern **zsh** environment tuned for
 DevOps / cloud / sysadmin work — on both **Linux** and **macOS**.
 
 It installs and configures zsh with [oh-my-zsh] for plugins and completions,
-[oh-my-posh] rendering the git-aware **bubblesextra** prompt, real-time
-autocompletion, autosuggestions, fast syntax highlighting, a curated set of CLI
+[oh-my-posh] rendering the git-aware **bubblesextra** prompt, native Tab
+completion menus, history autosuggestions, fast syntax highlighting, a curated set of CLI
 tools (Terraform, AWS/Azure/Kubernetes tooling, and more), and a ready-to-use
 `~/.zshrc` full of aliases and helper functions.
 
@@ -13,7 +13,19 @@ tools (Terraform, AWS/Azure/Kubernetes tooling, and more), and a ready-to-use
 
 ## Quick start
 
-Detect your OS and run the matching setup script in one line:
+For this private repository, use an authenticated checkout:
+
+```sh
+gh repo clone zachsd/zsh-shell
+cd zsh-shell
+# Choose the platform script below.
+```
+
+The raw-URL bootstrap below requires the repository to be publicly accessible;
+it does not authenticate private repository downloads. `GITHUB_TOKEN` is used
+for Linux release lookups, not by this bootstrap.
+
+When raw URLs are accessible, detect your OS and run the matching script:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/zachsd/zsh-shell/main/install.sh | sh
@@ -48,7 +60,8 @@ bash setup-zsh-devops.sh
 **Shell & prompt**
 - zsh set as your default shell, with oh-my-zsh (plugins + completions)
 - the git-aware `bubblesextra` prompt rendered by [oh-my-posh] (branch + working-tree status in the prompt)
-- `zsh-autocomplete`, `zsh-autosuggestions`, `fast-syntax-highlighting`
+- Native Tab / Shift-Tab menus, `zsh-autosuggestions`, `fast-syntax-highlighting`
+- Option/Alt–Left and Right move by word; Up/Down browse command history
 - JetBrainsMono Nerd Font
 
 **Tooling** (best-effort; anything unavailable is reported at the end)
@@ -70,16 +83,65 @@ AWS, Azure, Kubernetes, Helm, Docker, and git, plus network helpers
 
 ## Performance notes
 
-The generated shell config is built for fast startup:
+The generated shell config keeps maintenance out of interactive startup:
 
-- Tool completions are driven by an editable `zsh_completion_tools` list in
-  `~/.zshrc` (kubectl/helm/oc/eksctl/gh out of the box — add your own in one
-  line). They're **cached to disk** and only regenerated after a tool upgrade,
-  instead of forking each binary on every shell launch.
-- No network I/O during interactive startup.
-- `PATH` lives in `~/.zshenv` (Linux) / `~/.zprofile` (macOS), de-duplicated via
-  `typeset -U`, rather than being re-prepended in `~/.zshrc`.
-- On Linux, the installer downloads release binaries **in parallel**.
+- Tool completions are driven by `zsh_completion_tools` in `~/.zshrc`.
+  Run `zsh-refresh-completions` once after setup and after tool upgrades, then
+  open a new shell. Startup only reads the cached scripts; it never launches
+  kubectl, Helm, oc, eksctl, or gh to generate them. Failed refreshes preserve
+  the previous cache. Before the first refresh, only system/OMZ completions
+  are available.
+- Native completion menus replace `zsh-autocomplete`. Press Tab to complete
+  and enter the menu; Tab / Shift-Tab cycle matches. History suggestions and
+  syntax highlighting remain, with the same bubblesextra prompt and fzf colors.
+- Oh My Zsh automatic updates are disabled. Run `omz update` when you want to
+  update the framework; rerunning the full installer updates external plugins.
+- The default plugin list omits `dirhistory` (which takes over Option-arrow),
+  redundant AWS/Terraform/Helm setup, and brew/macos/vscode/command-not-found
+  helpers. The repository's aliases and installed tools remain available;
+  aliases provided only by removed plugins are no longer loaded.
+- `PATH` stays in `~/.zshenv` (Linux) / `~/.zprofile` (macOS), de-duplicated via
+  `typeset -U`.
+- Linux release downloads still run in parallel during installation.
+
+### Update configuration without reinstalling tools
+
+From a local checkout containing these changes:
+
+```sh
+# macOS
+ZSH_SETUP_CONFIG_ONLY=1 bash setup-zsh-devops.sh
+
+# Linux
+ZSH_SETUP_CONFIG_ONLY=1 bash setup-zsh-devops-linux.sh
+```
+
+This backs up and replaces `~/.zshrc`, skips package installation, downloads,
+font setup and shell changes, and preserves `~/.zprofile` / `~/.zshenv`.
+It requires the existing shell dependencies (including Homebrew on macOS).
+Put machine-specific settings in `~/.zshrc.local`, which is loaded last and
+preserved by either installation mode. Open a new shell and run
+`zsh-refresh-completions`; open another shell to use the refreshed caches.
+Restore the printed `.zshrc.backup.<timestamp>` file to roll back.
+
+### Option-arrow navigation
+
+The shell binds common terminal sequences in both Emacs and vi insert keymaps,
+including Esc-b/f, Alt-arrow, double-Esc arrows, and Ctrl-arrow. Emacs editing
+is the default; add `bindkey -v` to `~/.zshrc.local` if you prefer vi mode.
+
+If a terminal intercepts the shortcut, configure Option-Left to send `Esc b`
+and Option-Right to send `Esc f`. In iTerm2, review the profile's
+[Keys settings](https://iterm2.com/documentation-preferences-profiles-keys.html)
+and Option key behavior. The former `dirhistory` plugin assigned these
+shortcuts to directory navigation instead of word movement.
+
+### Validation
+
+Run `python3 tests/test_shell.py` (requires zsh) to exercise both generated
+platform configurations in temporary homes without package installation.
+The checks cover keymaps, completion menus, cold-cache startup, refresh failure
+recovery, invalid cache names, backups, and local overrides.
 
 ---
 
@@ -122,7 +184,8 @@ The Linux installer also honors `MAX_PARALLEL_DOWNLOADS` (default `6`).
 1. **Set your terminal font** to `JetBrainsMono Nerd Font Mono` (the script
    prints per-terminal instructions).
 2. **Restart your terminal** (or open a new tab).
-3. **Configure credentials** as needed: `aws configure`, `az login`, copy your
+3. **Prepare tool completions:** run `zsh-refresh-completions`, then open a new tab.
+4. **Configure credentials** as needed: `aws configure`, `az login`, copy your
    kubeconfig, `oc login`, etc.
 
 ---
