@@ -64,6 +64,24 @@ clone_or_update_plugin() {
 # ==============================================================================
 # 1. Preflight
 # ==============================================================================
+# Install npm CLIs per-user without sudo or shell-startup installation.
+install_npm_cli() {
+  local package="$1" executable="$2" min_major="$3" min_minor="${4:-0}"
+  if command -v "$executable" &>/dev/null || [[ -x "$HOME/.local/bin/$executable" ]]; then
+    log "$executable — already installed."
+    return 0
+  fi
+  if ! command -v npm &>/dev/null || ! command -v node &>/dev/null ||
+     ! node -e 'const [a,b]=process.versions.node.split(".").map(Number); const [x,y]=process.argv.slice(1).map(Number); process.exit(a>x || (a===x && b>=y) ? 0 : 1)' "$min_major" "$min_minor"; then
+    warn "$executable requires Node.js ${min_major}.${min_minor}+ and npm; install a supported Node.js LTS release and rerun."
+    FAILED_PKGS+=("$package")
+    return 1
+  fi
+  log "Installing $package …"
+  npm install --global --prefix "$HOME/.local" --ignore-scripts --engine-strict "$package" \
+    || { warn "FAILED: $package"; FAILED_PKGS+=("$package"); return 1; }
+}
+
 if [[ ${ZSH_SETUP_CONFIG_ONLY:-0} != 1 ]]; then
 header "1 / 8  Preflight checks"
 
@@ -208,6 +226,16 @@ safe_brew_install ripgrep               "ripgrep (rg)"
 safe_brew_install fd                    "fd (better find)"
 safe_brew_install tldr                  "tldr"
 safe_brew_install direnv                "direnv"
+
+# ── Agent tools & worktrees ────────────────────────────────────────────────────
+echo -e "\n${BOLD}  Agent tools & worktrees${RESET}"
+safe_brew_install herdr     "Herdr (agent multiplexer)"
+safe_brew_install worktrunk "Worktrunk (wt)"
+if ! command -v node &>/dev/null || ! command -v npm &>/dev/null; then
+  safe_brew_install node "Node.js + npm (agent CLI runtime)"
+fi
+install_npm_cli "@earendil-works/pi-coding-agent" pi 22 19
+install_npm_cli "@a5c-ai/babysitter" babysitter 20
 
 # ── Network / SysAdmin diagnostics ─────────────────────────────────────────
 echo -e "\n${BOLD}  Network & SysAdmin diagnostics${RESET}"
@@ -379,6 +407,8 @@ zsh_completion_tools=(
   "oc|oc completion zsh"
   "eksctl|eksctl completion zsh"
   "gh|gh completion -s zsh"
+  "herdr|herdr completion zsh"
+  "wt|wt config shell init zsh"
 )
 
 zsh-refresh-completions() {

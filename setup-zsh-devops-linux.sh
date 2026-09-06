@@ -182,7 +182,7 @@ clone_or_update_plugin() {
 # ------------------------------------------------------------------------------
 # GitHub release binary installer
 # Downloads the latest release asset matching asset_re and installs to install_path.
-# Supports tar.gz, zip, and bare binaries.
+# Supports tar.gz, tar.xz, zip, and bare binaries.
 # Respects GITHUB_TOKEN if set (avoids API rate limits).
 # ------------------------------------------------------------------------------
 install_github_release() {
@@ -204,9 +204,9 @@ install_github_release() {
   local download_url
   download_url=$(curl "${curl_auth_opts[@]}" -fsSL "$api_url" \
     | grep '"browser_download_url"' \
+    | sed 's/.*"browser_download_url": *"\([^"]*\)".*/\1/' \
     | grep -E "$asset_re" \
-    | head -1 \
-    | sed 's/.*"browser_download_url": *"\([^"]*\)".*/\1/')
+    | head -1)
 
   if [[ -z "$download_url" ]]; then
     warn "Could not find asset matching '$asset_re' in $repo releases."
@@ -230,13 +230,18 @@ install_github_release() {
   }
 
   case "$filename" in
-    *.tar.gz|*.tgz)
-      tar -xzf "${tmpdir}/${filename}" -C "$tmpdir"
+    *.tar.gz|*.tgz|*.tar.xz)
+      tar -xf "${tmpdir}/${filename}" -C "$tmpdir" || {
+        warn "Could not unpack $filename."
+        record_failure "$desc"; rm -rf "$tmpdir"; return 1
+      }
       local found
       found=$(find "$tmpdir" -type f -name "$binary_name" | head -1)
-      [[ -z "$found" ]] && found=$(find "$tmpdir" -maxdepth 3 -type f -executable ! -name "*.tar.gz" | head -1)
+      [[ -z "$found" ]] && found=$(find "$tmpdir" -maxdepth 3 -type f -executable ! -name "*.tar.gz" ! -name "*.tar.xz" | head -1)
       if [[ -n "$found" ]]; then
-        sudo install -m 0755 "$found" "$install_path"
+        sudo install -m 0755 "$found" "$install_path" || {
+          record_failure "$desc"; rm -rf "$tmpdir"; return 1
+        }
       else
         warn "Could not locate '$binary_name' after unpacking $filename."
         record_failure "$desc"; rm -rf "$tmpdir"; return 1
@@ -247,7 +252,9 @@ install_github_release() {
       local found
       found=$(find "$tmpdir" -type f -name "$binary_name" | head -1)
       if [[ -n "$found" ]]; then
-        sudo install -m 0755 "$found" "$install_path"
+        sudo install -m 0755 "$found" "$install_path" || {
+          record_failure "$desc"; rm -rf "$tmpdir"; return 1
+        }
       else
         warn "Could not locate '$binary_name' after unzipping."
         record_failure "$desc"; rm -rf "$tmpdir"; return 1
@@ -336,6 +343,24 @@ check_github_rate_limit() {
 # ==============================================================================
 # 1. Preflight
 # ==============================================================================
+# Install npm CLIs per-user without sudo or shell-startup installation.
+install_npm_cli() {
+  local package="$1" executable="$2" min_major="$3" min_minor="${4:-0}"
+  if command -v "$executable" &>/dev/null || [[ -x "$HOME/.local/bin/$executable" ]]; then
+    log "$executable — already installed."
+    return 0
+  fi
+  if ! command -v npm &>/dev/null || ! command -v node &>/dev/null ||
+     ! node -e 'const [a,b]=process.versions.node.split(".").map(Number); const [x,y]=process.argv.slice(1).map(Number); process.exit(a>x || (a===x && b>=y) ? 0 : 1)' "$min_major" "$min_minor"; then
+    warn "$executable requires Node.js ${min_major}.${min_minor}+ and npm; install a supported Node.js LTS release and rerun."
+    FAILED_PKGS+=("$package")
+    return 1
+  fi
+  log "Installing $package …"
+  npm install --global --prefix "$HOME/.local" --ignore-scripts --engine-strict "$package" \
+    || { warn "FAILED: $package"; FAILED_PKGS+=("$package"); return 1; }
+}
+
 if [[ ${ZSH_SETUP_CONFIG_ONLY:-0} != 1 ]]; then
 header "1 / 8  Preflight checks"
 
@@ -977,6 +1002,46 @@ EOF
 }
 install_vscode
 
+# ── Agent tools & worktrees ────────────────────────────────────────────────────
+echo -e "\n${BOLD}  Agent tools & worktrees${RESET}"
+if command -v herdr &>/dev/null || [[ -x "$HOME/.local/bin/herdr" ]]; then
+  log "Herdr — already installed."
+else
+  # Download completely before execution; upstream verifies the binary checksum.
+  herdr_installer=$(mktemp)
+  if [[ -n "$herdr_installer" ]] && curl -fsSL https://herdr.dev/install.sh -o "$herdr_installer" \
+     && sh "$herdr_installer"; then
+    log "Herdr installed."
+  else
+    warn "FAILED: Herdr"; FAILED_PKGS+=("herdr")
+  fi
+  [[ -n "$herdr_installer" ]] && rm -f "$herdr_installer"
+fi
+if command -v wt &>/dev/null; then
+  log "Worktrunk — already installed."
+elif [[ "$ARCH" == amd64 || "$ARCH" == arm64 ]]; then
+  if ! command -v xz &>/dev/null; then
+    case "$DISTRO_FAMILY" in
+      debian) safe_pkg_install xz-utils "xz (Worktrunk archives)" ;;
+      rhel) safe_pkg_install xz "xz (Worktrunk archives)" ;;
+    esac
+  fi
+  pbg install_github_release "max-sixty/worktrunk" \
+    "worktrunk-${ARCH_ALT}-unknown-linux-musl\.tar\.xz$" \
+    "/usr/local/bin/wt" "Worktrunk"
+else
+  warn "Worktrunk release binaries support x86_64/aarch64; skipping $ARCH."
+  FAILED_PKGS+=("worktrunk")
+fi
+if ! command -v node &>/dev/null; then
+  safe_pkg_install nodejs "Node.js (agent CLI runtime)"
+fi
+if ! command -v npm &>/dev/null; then
+  safe_pkg_install npm "npm (agent CLI packages)"
+fi
+install_npm_cli "@earendil-works/pi-coding-agent" pi 22 19
+install_npm_cli "@a5c-ai/babysitter" babysitter 20
+
 # Barrier: wait for all parallel GitHub-release downloads to finish and fold
 # their failures back into FAILED_PKGS before we report/summarise.
 log "Waiting for parallel release-binary installs to finish …"
@@ -1107,6 +1172,8 @@ zsh_completion_tools=(
   "oc|oc completion zsh"
   "eksctl|eksctl completion zsh"
   "gh|gh completion -s zsh"
+  "herdr|herdr completion zsh"
+  "wt|wt config shell init zsh"
 )
 
 zsh-refresh-completions() {

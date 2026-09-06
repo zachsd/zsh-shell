@@ -59,6 +59,7 @@ class ShellConfigTests(unittest.TestCase):
                 self.generate(script)
                 self.shell('')
                 # Startup must not execute a generator, even with a cold cache.
+                self.stub('wt', "echo called >> \"$HOME/wt-generator\"; echo 'wt() { print -r -- wrapper-loaded; }'")
                 self.stub('kubectl', 'echo called >> "$HOME/generator"; echo "compdef _files kubectl"')
                 result = self.shell('''
 for map in emacs viins; do
@@ -74,11 +75,14 @@ done
 [[ $plugins != *dirhistory* && $plugins != *zsh-autocomplete* ]] || exit 14
 ''')
                 self.assertFalse((self.home / 'generator').exists())
+                self.assertFalse((self.home / 'wt-generator').exists())
                 self.shell('zsh-refresh-completions')
                 cache = self.home / '.cache/zsh/completions/kubectl.zsh'
                 self.assertEqual(cache.read_text(), 'compdef _files kubectl\n')
                 (self.home / 'generator').unlink()
-                self.shell('[[ $_comps[kubectl] == _files ]]')
+                (self.home / 'wt-generator').unlink()
+                self.shell('[[ $_comps[kubectl] == _files ]] && [[ $(wt) == wrapper-loaded ]]')
+                self.assertFalse((self.home / 'wt-generator').exists())
                 self.assertFalse((self.home / 'generator').exists())
                 # A failed or malformed generator must preserve the working cache.
                 for body in ('echo broken; exit 1', 'echo "if then"', 'exit 0'):
@@ -92,6 +96,7 @@ done
                 (self.home / '.zshrc.local').write_text('export LOCAL_LOADED=yes\n')
                 self.shell('[[ $LOCAL_LOADED == yes ]]')
                 (self.home / '.zshrc.local').unlink()
+                (self.home / 'wt-generator').unlink(missing_ok=True)
 
 if __name__ == '__main__':
     unittest.main()
