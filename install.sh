@@ -131,7 +131,7 @@ printf '\n'
 if [ "$DRY_RUN" -eq 1 ]; then
   say "Dry run — would download and execute:"
   say "  ${RAW_BASE}/${SCRIPT}"
-  say "  plus configure-nushell.nu and shell/*.nu / shell/starship.toml from the same ref"
+  say "  plus the Nushell/Neovim configurators and their shared files from the same ref"
   exit 0
 fi
 
@@ -161,9 +161,9 @@ command -v bash >/dev/null 2>&1 || die "bash is required to run the setup script
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/nu-setup.XXXXXX")" || die "Could not create a temp directory."
 trap 'rm -rf "$TMP"' EXIT INT TERM
-mkdir -p "$TMP/shell"
+mkdir -p "$TMP/shell" "$TMP/nvim/after/plugin"
 # The configurator and templates must come from the same ref as the installer.
-for file in "$SCRIPT" configure-nushell.nu shell/env.nu shell/config.nu shell/aliases.nu shell/starship.toml; do
+for file in "$SCRIPT" configure-nushell.nu configure-neovim.nu shell/env.nu shell/config.nu shell/aliases.nu shell/starship.toml nvim/after/plugin/tree-sitter-nu.lua; do
   URL="${RAW_BASE}/${file}"
   say "Downloading ${URL} …"
   if command -v curl >/dev/null 2>&1; then

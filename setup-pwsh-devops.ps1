@@ -228,6 +228,8 @@ Write-Warn "  - VSCode:           `"terminal.integrated.fontFamily`": `"JetBrain
 Write-Header "Shell tools — Nushell, Starship, Carapace & zoxide"
 Install-ScoopPackage nushell "Nushell" nu
 Install-ScoopPackage neovim "Neovim (default editor)" nvim
+Install-ScoopPackage tree-sitter "Tree-sitter CLI" tree-sitter
+Install-ScoopPackage zig "Zig compiler (Tree-sitter parsers)" zig
 Install-ScoopPackage starship "Starship" starship
 Install-ScoopPackage extras/carapace-bin "Carapace" carapace
 Install-ScoopPackage zoxide "zoxide" zoxide
@@ -350,6 +352,11 @@ if ($SkipTools) {
 if (-not (Test-CommandExists nu)) { throw "Nushell installation failed; default terminal unchanged." }
 & nu --no-config-file (Join-Path $PSScriptRoot 'configure-nushell.nu')
 if ($LASTEXITCODE -ne 0) { throw "Nushell configuration failed; default terminal unchanged." }
+& nu --no-config-file (Join-Path $PSScriptRoot 'configure-neovim.nu')
+if ($LASTEXITCODE -ne 0) {
+    Write-Warn "tree-sitter-nu configuration failed."
+    Add-Failure 'tree-sitter-nu'
+}
 if (-not $NoDefaultShell) {
     if (Test-CommandExists pwsh) {
         & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'set-windows-terminal.ps1')

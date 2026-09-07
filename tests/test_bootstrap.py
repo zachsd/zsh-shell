@@ -13,11 +13,12 @@ class BootstrapTests(unittest.TestCase):
               'curl': '''url="$2"; dest="$4"
                 case "$url" in
                   */shell/*) file="shell/${url##*/}" ;;
+                  */nvim/*) file="nvim/after/plugin/${url##*/}" ;;
                   *) file="${url##*/}" ;;
                 esac
                 cp "$SOURCE/$file" "$dest"''',
               'bash': '''folder=$(dirname "$1")
-                for file in configure-nushell.nu shell/env.nu shell/config.nu shell/aliases.nu shell/starship.toml; do
+                for file in configure-nushell.nu configure-neovim.nu shell/env.nu shell/config.nu shell/aliases.nu shell/starship.toml nvim/after/plugin/tree-sitter-nu.lua; do
                   test -s "$folder/$file" || exit 42
                 done
                 echo bundle-ready''',
