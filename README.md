@@ -68,7 +68,9 @@ release API lookups. Linux downloads remain bounded by `MAX_PARALLEL_DOWNLOADS`
 - zoxide: `z <name>` jumps to a frequent directory; `zi` uses the fzf picker.
   Native `cd` remains available.
 - Neovim (`nvim`) is installed and selected for `EDITOR`, `VISUAL`, and
-  Nushell’s command-buffer editor. Personal overrides can go in `config.local.nu`.
+  Nushell’s command-buffer editor. `tree-sitter-nu` provides Nushell-aware
+  highlighting through a small managed `nvim-treesitter` configuration.
+  Personal overrides can go in `config.local.nu`.
 - Built-in syntax highlighting, Emacs editing, shared SQLite history,
   and explicit Option/Alt-arrow (and Meta-b/f) word navigation.
 - Common Terraform, AWS, Azure, Kubernetes, Helm, Docker and Git aliases,
@@ -89,11 +91,15 @@ After installing/upgrading the required binaries, run from the checkout:
 
 ```sh
 nu --no-config-file configure-nushell.nu
+nu --no-config-file configure-neovim.nu
 ```
 
 The configurator requires `nu`, `starship`, `carapace`, and `zoxide` on PATH.
 It stages the generated files and validates parsing and startup before replacing
 configuration. Existing managed files receive timestamped backups.
+The Neovim configurator requires `nvim`, `git`, the Tree-sitter CLI, and a C
+compiler. It preserves `init.lua` and manages only its own Nushell highlighting
+file, backing up a different file already at that path.
 
 Unix configuration-only compatibility commands (no installs or `chsh`):
 
@@ -125,7 +131,8 @@ on Windows restore the settings backup or choose the previous default profile.
 
 ## Installed tools
 
-- Shell/editor: Nushell, Neovim, Starship, Carapace, zoxide, fzf, JetBrainsMono Nerd Font.
+- Shell/editor: Nushell, Neovim, tree-sitter-nu, Starship, Carapace, zoxide,
+  fzf, JetBrainsMono Nerd Font.
 - Agents/worktrees: Herdr, Pi, Worktrunk, Babysitter (`@a5c-ai/babysitter`).
 - IaC: Terraform, Terragrunt, Packer, Vault, TFLint, terraform-docs, Infracost,
   SOPS; Ansible on Unix.
@@ -162,4 +169,5 @@ on those hosts.
 Official integration references: [Nushell](https://www.nushell.sh/book/configuration.html),
 [Starship](https://starship.rs/guide/),
 [Carapace](https://carapace-sh.github.io/carapace-bin/setup.html),
-[zoxide](https://github.com/ajeetdsouza/zoxide).
+[zoxide](https://github.com/ajeetdsouza/zoxide),
+[tree-sitter-nu](https://github.com/nushell/tree-sitter-nu).

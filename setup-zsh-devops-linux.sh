@@ -552,6 +552,13 @@ warn "  • VSCode:          \"terminal.integrated.fontFamily\": \"JetBrainsMono
 
 header "4 / 8  Nushell, Starship & Carapace"
 safe_pkg_install neovim "Neovim (default editor)"
+case "$DISTRO_FAMILY" in
+  debian) safe_pkg_install build-essential "C compiler (Tree-sitter parsers)" ;;
+  rhel)
+    safe_pkg_install gcc "GCC (Tree-sitter parsers)"
+    safe_pkg_install gcc-c++ "G++ (Tree-sitter parsers)"
+    ;;
+esac
 case "$ARCH" in
   amd64|arm64) NU_TARGET="${ARCH_ALT}-unknown-linux-musl" ;;
   *) error "Nushell setup supports Linux x86_64 and aarch64 release binaries." ;;
@@ -562,6 +569,12 @@ command -v starship &>/dev/null || install_github_release "starship/starship" \
   "starship-${NU_TARGET}\.tar\.gz$" "/usr/local/bin/starship" "Starship"
 command -v carapace &>/dev/null || install_github_release "carapace-sh/carapace-bin" \
   "carapace-bin_[0-9].*_linux_${ARCH}\.tar\.gz$" "/usr/local/bin/carapace" "Carapace"
+case "$ARCH" in
+  amd64) TREE_SITTER_ARCH="x64" ;;
+  arm64) TREE_SITTER_ARCH="arm64" ;;
+esac
+command -v tree-sitter &>/dev/null || install_github_release "tree-sitter/tree-sitter" \
+  "tree-sitter-cli-linux-${TREE_SITTER_ARCH}\.zip$" "/usr/local/bin/tree-sitter" "Tree-sitter CLI"
 
 # ==============================================================================
 # 7. Tool installation
@@ -975,6 +988,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
 command -v nu &>/dev/null || error "Nushell is required. Install nu and rerun."
 nu --no-config-file "$SCRIPT_DIR/configure-nushell.nu" || error "Nushell configuration failed; login shell unchanged."
+nu --no-config-file "$SCRIPT_DIR/configure-neovim.nu" \
+  || { warn "tree-sitter-nu configuration failed."; FAILED_PKGS+=("tree-sitter-nu"); }
 
 if [[ "$ZSH_SETUP_CONFIG_ONLY" != 1 && ${SHELL_SETUP_SET_DEFAULT:-1} == 1 ]]; then
   NU_BIN="$(command -v nu)"

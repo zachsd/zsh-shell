@@ -103,6 +103,7 @@ warn "  • VSCode:       terminal.integrated.fontFamily"
 header "4 / 8  Nushell, Starship, Carapace & zoxide"
 safe_brew_install nushell "Nushell (default shell)"
 safe_brew_install neovim "Neovim (default editor)"
+safe_brew_install tree-sitter "Tree-sitter CLI (Neovim parser runtime)"
 safe_brew_install starship "Starship prompt"
 safe_brew_install carapace "Carapace command completion"
 safe_brew_install zoxide "zoxide (smart directory navigation)"
@@ -215,6 +216,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
 command -v nu &>/dev/null || error "Nushell is required. Install nu and rerun."
 nu --no-config-file "$SCRIPT_DIR/configure-nushell.nu" || error "Nushell configuration failed; login shell unchanged."
+nu --no-config-file "$SCRIPT_DIR/configure-neovim.nu" \
+  || { warn "tree-sitter-nu configuration failed."; FAILED_PKGS+=("tree-sitter-nu"); }
 
 if [[ "$ZSH_SETUP_CONFIG_ONLY" != 1 && ${SHELL_SETUP_SET_DEFAULT:-1} == 1 ]]; then
   NU_BIN="$(command -v nu)"
