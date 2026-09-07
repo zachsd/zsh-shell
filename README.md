@@ -1,244 +1,163 @@
-# zsh-shell
+# DevOps shell setup
 
-Opinionated, one-command setup for a modern **zsh** environment tuned for
-DevOps / cloud / sysadmin work — on both **Linux** and **macOS**.
+A cross-platform **Nushell** environment with a **Starship** prompt,
+**Carapace** command completion, **zoxide** directory navigation, and the
+DevOps/agent tools used across your machines. The repository and installer
+filenames retain their original `zsh-shell` names for compatibility.
 
-It installs and configures zsh with [oh-my-zsh] for plugins and completions,
-[oh-my-posh] rendering the git-aware **bubblesextra** prompt, native Tab
-completion menus, history autosuggestions, fast syntax highlighting, a curated set of CLI
-tools (Terraform, AWS/Azure/Kubernetes tooling, and more), and a ready-to-use
-`~/.zshrc` full of aliases and helper functions.
+## Install
 
----
-
-## Quick start
-
-For this private repository, use an authenticated checkout:
+For this private repository, start with an authenticated checkout:
 
 ```sh
 gh repo clone zachsd/zsh-shell
 cd zsh-shell
-# Choose the platform script below.
+
+# macOS — Homebrew
+bash setup-zsh-devops.sh
+
+# Linux — Debian/Ubuntu or RHEL/Fedora family; x86_64/aarch64
+bash setup-zsh-devops-linux.sh
 ```
 
-The raw-URL bootstrap below requires the repository to be publicly accessible;
-it does not authenticate private repository downloads. `GITHUB_TOKEN` is used
-for Linux release lookups, not by this bootstrap.
+Windows, from PowerShell:
 
-When raw URLs are accessible, detect your OS and run the matching script:
+```powershell
+.\setup-pwsh-devops.ps1
+```
+
+The Unix installers register Nushell in `/etc/shells` and run `chsh` **after**
+the configuration validates. Windows selects a dedicated Nushell profile as
+Windows Terminal's default; open Windows Terminal once before running setup.
+Existing terminal settings are backed up and preserved, although JSON comments
+and formatting are normalized. Windows has no system-wide `chsh` equivalent.
+Other terminal applications with an explicit startup command must be set to `nu`.
+
+To configure without changing the default, set `SHELL_SETUP_SET_DEFAULT=0` on
+Unix or use `-NoDefaultShell` on Windows. A failed default-shell change is
+reported at the end. Existing zsh/PowerShell profiles and installed Oh My Posh /
+Oh My Zsh packages are left intact for rollback; the new Nushell setup does not
+install or load them.
+
+Set your terminal font to **JetBrainsMono Nerd Font Mono**, then open a new
+terminal. Nushell is a different language: use `bash script.sh` for Bash scripts
+and `$env.NAME = 'value'` for environment variables. Old `.zshrc.local` code is
+not automatically executed or translated.
+
+The public/raw-URL bootstrap is still available where the raw files are
+accessible. It downloads the platform installer and all shared configuration
+files from the same ref. It does not authenticate private raw downloads:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/zachsd/zsh-shell/main/install.sh | sh
+# Detect only, without downloading or installing:
+sh install.sh --dry-run
 ```
 
-`install.sh` figures out whether you're on macOS or Linux (and which Linux
-distro), prints what it found, asks for confirmation, then downloads and runs
-the right script. Prefer to see what it would do first? Add `--dry-run`:
+Bootstrap flags: `--yes`, `--dry-run`, `--help`. `ZSH_SETUP_REPO` and
+`ZSH_SETUP_REF` override the repository and ref. `GITHUB_TOKEN` is used for Linux
+release API lookups. Linux downloads remain bounded by `MAX_PARALLEL_DOWNLOADS`
+(default 6).
+
+## Shell experience
+
+- Starship: a compact two-line blue/purple prompt with Nerd Font OS icons,
+  directory, Git branch/status, duration of slow commands, and a green/red cursor.
+- Carapace: external command/argument completion alongside Nushell's native
+  structured completion and fuzzy matching.
+- zoxide: `z <name>` jumps to a frequent directory; `zi` uses the fzf picker.
+  Native `cd` remains available.
+- Built-in syntax highlighting, Emacs editing, shared SQLite history,
+  and explicit Option/Alt-arrow (and Meta-b/f) word navigation.
+- Common Terraform, AWS, Azure, Kubernetes, Helm, Docker and Git aliases,
+  plus Nushell helpers including `mkcd`, `awsprofile`, `awsregion`, `kswitch`,
+  `kpf`, `eksconfig`, `aksconfig`, `b64enc`, `b64dec`, and `serve`.
+  Native `ls`, `ps`, and other structured commands are not replaced by text tools.
+- Worktrunk's Nushell integration is generated when installed (`git-wt` on
+  Windows avoids the Windows Terminal `wt` alias).
+
+Integration scripts are generated **during configuration**, not on every shell
+launch. Starship still renders each prompt, Carapace computes matches on demand,
+and zoxide tracks visited directories. There are no automatic framework/plugin
+updates or cloud status queries added by this configuration.
+
+## Update configuration and refresh integrations
+
+After installing/upgrading the required binaries, run from the checkout:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/zachsd/zsh-shell/main/install.sh | sh -s -- --dry-run
+nu --no-config-file configure-nushell.nu
 ```
 
-> The script asks for confirmation and uses `sudo` for system packages. Read it
-> first if you like — `curl -fsSL https://raw.githubusercontent.com/zachsd/zsh-shell/main/install.sh | less`
-> — before piping to a shell.
+The configurator requires `nu`, `starship`, `carapace`, and `zoxide` on PATH.
+It stages the generated files and validates parsing and startup before replacing
+configuration. Existing managed files receive timestamped backups.
 
-### Or run a platform script directly
+Unix configuration-only compatibility commands (no installs or `chsh`):
 
 ```sh
-# Linux (Debian/Ubuntu · RHEL/CentOS/Fedora/Alma/Rocky)
-bash setup-zsh-devops-linux.sh
-
-# macOS (Homebrew)
-bash setup-zsh-devops.sh
+SHELL_SETUP_CONFIG_ONLY=1 bash setup-zsh-devops.sh
+SHELL_SETUP_CONFIG_ONLY=1 bash setup-zsh-devops-linux.sh
 ```
 
----
+The old `ZSH_SETUP_CONFIG_ONLY=1` spelling is also accepted. On Windows,
+`-SkipTools` skips optional DevOps packages but still installs/configures the
+shell stack; use the `nu` configurator above for a strictly configuration-only
+refresh.
 
-## What you get
+Files live in Nushell's native configuration directory, discoverable with
+`$nu.default-config-dir` (respects `XDG_CONFIG_HOME`):
 
-**Shell & prompt**
-- zsh set as your default shell, with oh-my-zsh (plugins + completions)
-- the git-aware `bubblesextra` prompt rendered by [oh-my-posh] (branch + working-tree status in the prompt)
-- Native Tab / Shift-Tab menus, `zsh-autosuggestions`, `fast-syntax-highlighting`
-- Option/Alt–Left and Right move by word; Up/Down browse command history
-- JetBrainsMono Nerd Font
+- macOS: `~/Library/Application Support/nushell`
+- Linux: `~/.config/nushell`
+- Windows: `%APPDATA%\nushell`
 
-**Tooling** (best-effort; anything unavailable is reported at the end)
-- **IaC:** Terraform, Terragrunt, Packer, Vault, TFLint, terraform-docs, Infracost, SOPS, Ansible
-- **AWS:** AWS CLI v2, `aws-iam-authenticator`, `eksctl`
-- **Azure:** Azure CLI
-- **Kubernetes / OpenShift:** kubectl, Helm, kubectx/kubens, k9s, kustomize, stern, kubeseal, `oc`, kubecolor
-- **Containers:** Podman, Docker Compose
-- **Agents & worktrees:** [Herdr](https://herdr.dev/docs/install/),
-  [Pi](https://pi.dev/docs/latest), [Worktrunk (`wt`)](https://worktrunk.dev/),
-  [Babysitter](https://github.com/a5c-ai/babysitter/tree/main/packages/babysitter)
-- **Dev:** git, GitHub CLI, jq, yq, fzf, bat, eza, zoxide, ripgrep, fd, tldr, direnv
-- **Network / sysadmin:** nmap, mtr, tcpdump, tshark, httpie, socat, iperf3, whois, and more
-- **VS Code** (where available)
+`env.nu` manages PATH without reading zsh files. `config.nu` loads cached
+integrations and aliases, then **`config.local.nu`** for personal settings.
+The local file and an existing `starship.toml` are never overwritten. Set
+`STARSHIP_CONFIG` to use a different theme.
 
-**A configured `~/.zshrc`** with aliases and functions for Terraform/Terragrunt,
-AWS, Azure, Kubernetes, Helm, Docker, and git, plus network helpers
-(`sslcheck`, `lookup`, `tcpcheck`, …) and utilities (`mkcd`, `extract`,
-`genpass`, `serve`, …). Your existing `~/.zshrc` is backed up first.
+For rollback, restore the relevant timestamped files and open a new shell.
+On Unix, `chsh -s /bin/zsh` selects the previous shell where that is its path;
+on Windows restore the settings backup or choose the previous default profile.
 
----
+## Installed tools
 
-## Agent tools
+- Shell: Nushell, Starship, Carapace, zoxide, fzf, JetBrainsMono Nerd Font.
+- Agents/worktrees: Herdr, Pi, Worktrunk, Babysitter (`@a5c-ai/babysitter`).
+- IaC: Terraform, Terragrunt, Packer, Vault, TFLint, terraform-docs, Infracost,
+  SOPS; Ansible on Unix.
+- Cloud/Kubernetes: AWS CLI, Azure CLI, eksctl, aws-iam-authenticator, kubectl,
+  Helm, kubectx/kubens, k9s, kustomize, stern, kubeseal, OpenShift CLI.
+- Dev: Git, GitHub CLI, jq, yq, bat, eza, ripgrep, fd, tldr, VS Code; direnv
+  remains installed on Unix but requires an explicit Nushell integration if used.
+- Containers and network/sysadmin utilities remain in the platform package lists.
 
-The full macOS, Linux, and Windows installers include these tools:
+Package installation is best-effort; failures are reported. Pi requires Node.js
+22.19+ and Babysitter requires Node.js 20+. Missing Node/npm are attempted via the
+platform package manager; older Linux packages may require a manual LTS upgrade.
+Existing Node installations are preserved. npm CLIs use per-user prefixes,
+`--ignore-scripts` and `--engine-strict`. Configure agent/provider credentials
+separately; setup does not start agents or install harness plugins.
 
-| Tool | macOS | Linux | Windows |
-| ---- | ----- | ----- | ------- |
-| Herdr | Homebrew `herdr` | Official installer, per-user | Official PowerShell installer |
-| Pi (`pi`) | npm `@earendil-works/pi-coding-agent` | Same | Same |
-| Worktrunk | Homebrew `worktrunk` | Official x86_64/aarch64 musl release | Winget `max-sixty.worktrunk` (`git-wt`) |
-| Babysitter | npm `@a5c-ai/babysitter` | Same | Same |
+## Validation
 
-Pi requires **Node.js 22.19+**; Babysitter requires **Node.js 20+**.
-When Node/npm are missing, setup attempts to install them using Homebrew,
-the Linux package manager, or Scoop's `nodejs-lts`. An existing Node installation
-is preserved. Older Linux distro packages may not meet these requirements;
-install a supported Node.js LTS release and rerun if setup reports a runtime
-failure. Unsupported CPUs or failed installs appear in the failure summary.
-
-npm tools are installed per-user with lifecycle scripts disabled and engine
-requirements enforced: `~/.local` on macOS/Linux and `%APPDATA%/npm` on Windows.
-Existing commands are skipped on reruns. No agents, services, logins, or harness
-plugins are started/configured automatically. Configuration-only mode and
-PowerShell's `-SkipTools` skip these installations.
-
-In zsh, run `zsh-refresh-completions`, then open a new shell to enable Herdr
-completion and Worktrunk's directory-switching wrapper. The wrapper is cached
-with completions, so it adds no generator call to startup; refresh it after
-upgrading Worktrunk. On Windows use `git-wt` (plain `wt` is Windows Terminal),
-and run `git-wt config shell install powershell` after setup/re-generating the
-PowerShell profiles. Start Pi with `pi` and configure its provider with `/login`.
-Babysitter's CLI is installed; harness-specific integration remains a separate
-step following its documentation.
-
----
-
-## Performance notes
-
-The generated shell config keeps maintenance out of interactive startup:
-
-- Tool completions are driven by `zsh_completion_tools` in `~/.zshrc`.
-  Run `zsh-refresh-completions` once after setup and after tool upgrades, then
-  open a new shell. Startup only reads the cached scripts; it never launches
-  kubectl, Helm, oc, eksctl, or gh to generate them. Failed refreshes preserve
-  the previous cache. Before the first refresh, only system/OMZ completions
-  are available.
-- Native completion menus replace `zsh-autocomplete`. Press Tab to complete
-  and enter the menu; Tab / Shift-Tab cycle matches. History suggestions and
-  syntax highlighting remain, with the same bubblesextra prompt and fzf colors.
-- Oh My Zsh automatic updates are disabled. Run `omz update` when you want to
-  update the framework; rerunning the full installer updates external plugins.
-- The default plugin list omits `dirhistory` (which takes over Option-arrow),
-  redundant AWS/Terraform/Helm setup, and brew/macos/vscode/command-not-found
-  helpers. The repository's aliases and installed tools remain available;
-  aliases provided only by removed plugins are no longer loaded.
-- `PATH` stays in `~/.zshenv` (Linux) / `~/.zprofile` (macOS), de-duplicated via
-  `typeset -U`.
-- Linux release downloads still run in parallel during installation.
-
-### Update configuration without reinstalling tools
-
-From a local checkout containing these changes:
+With `nu`, `starship`, `carapace`, `zoxide`, Python 3, and xz installed:
 
 ```sh
-# macOS
-ZSH_SETUP_CONFIG_ONLY=1 bash setup-zsh-devops.sh
-
-# Linux
-ZSH_SETUP_CONFIG_ONLY=1 bash setup-zsh-devops-linux.sh
+python3 -m unittest discover -s tests
+pwsh -NoProfile -File tests/test_agent_tools.ps1
+pwsh -NoProfile -File tests/test_windows_terminal.ps1
 ```
 
-This backs up and replaces `~/.zshrc`, skips package installation, downloads,
-font setup and shell changes, and preserves `~/.zprofile` / `~/.zshenv`.
-It requires the existing shell dependencies (including Homebrew on macOS).
-Put machine-specific settings in `~/.zshrc.local`, which is loaded last and
-preserved by either installation mode. Open a new shell and run
-`zsh-refresh-completions`; open another shell to use the refreshed caches.
-Restore the printed `.zshrc.backup.<timestamp>` file to roll back.
+Tests use temporary homes and fake package managers. They check actual Nushell
+startup, Carapace Git matches, zoxide jumps, local overrides, backups, failed
+configuration rollback, package failure handling, and Windows Terminal settings
+preservation. The migration was tested with Nushell 0.115.1, Starship 1.26.0,
+and Carapace 1.7.3 on macOS; full Windows/Linux installation requires validation
+on those hosts.
 
-### Option-arrow navigation
-
-The shell binds common terminal sequences in both Emacs and vi insert keymaps,
-including Esc-b/f, Alt-arrow, double-Esc arrows, and Ctrl-arrow. Emacs editing
-is the default; add `bindkey -v` to `~/.zshrc.local` if you prefer vi mode.
-
-If a terminal intercepts the shortcut, configure Option-Left to send `Esc b`
-and Option-Right to send `Esc f`. In iTerm2, review the profile's
-[Keys settings](https://iterm2.com/documentation-preferences-profiles-keys.html)
-and Option key behavior. The former `dirhistory` plugin assigned these
-shortcuts to directory navigation instead of word movement.
-
-### Validation
-
-Run `python3 tests/test_shell.py` (requires zsh) to exercise both generated
-platform configurations in temporary homes without package installation.
-The checks cover keymaps, completion menus, cold-cache startup, refresh failure
-recovery, invalid cache names, backups, and local overrides. Run all Python
-checks with `python3 -m unittest discover -s tests`; npm installer helper checks
-for PowerShell run with `pwsh -NoProfile -File tests/test_agent_tools.ps1`.
-
----
-
-## `install.sh` options
-
-Pass flags through the pipe with `sh -s --`:
-
-| Flag | Effect |
-| ---- | ------ |
-| `-n`, `--dry-run` | Detect and print the environment; download/run nothing. |
-| `-y`, `--yes`     | Skip the confirmation prompt. |
-| `-h`, `--help`    | Show usage. |
-
-Environment overrides:
-
-| Variable | Default | Purpose |
-| -------- | ------- | ------- |
-| `ZSH_SETUP_REPO` | `zachsd/zsh-shell` | Source `owner/repo`. |
-| `ZSH_SETUP_REF`  | `main` | Branch / tag / commit to pull the scripts from. |
-| `GITHUB_TOKEN`   | — | Used by the Linux installer to avoid GitHub API rate limits. |
-
-The Linux installer also honors `MAX_PARALLEL_DOWNLOADS` (default `6`).
-
----
-
-## Requirements
-
-- **Linux:** a Debian- or RHEL-family distro with `sudo`. For the `curl | sh`
-  path you need a downloader (`curl` **or** `wget`) plus `bash` to run the setup
-  script; other essentials like `git`/`unzip`/`tar` are bootstrapped by the
-  setup script if missing.
-- **macOS:** [Homebrew]. `bash` is required to run the setup script.
-- `install.sh` itself is POSIX `sh`, so it runs the same under `sh`, `bash`,
-  `dash`, or `zsh`.
-
----
-
-## After install
-
-1. **Set your terminal font** to `JetBrainsMono Nerd Font Mono` (the script
-   prints per-terminal instructions).
-2. **Restart your terminal** (or open a new tab).
-3. **Prepare tool completions:** run `zsh-refresh-completions`, then open a new tab.
-4. **Configure credentials** as needed: `aws configure`, `az login`, copy your
-   kubeconfig, `oc login`, etc.
-
----
-
-## Repository layout
-
-| File | Purpose |
-| ---- | ------- |
-| `install.sh` | OS/shell discovery bootstrap; run via `curl … \| sh`. |
-| `setup-zsh-devops-linux.sh` | Full setup for Linux (apt / dnf / yum). |
-| `setup-zsh-devops.sh` | Full setup for macOS (Homebrew). |
-| `setup-pwsh-devops.ps1` | Windows PowerShell setup (Scoop / Winget). |
-
-[oh-my-zsh]: https://ohmyz.sh/
-[oh-my-posh]: https://ohmyposh.dev/
-[Homebrew]: https://brew.sh/
+Official integration references: [Nushell](https://www.nushell.sh/book/configuration.html),
+[Starship](https://starship.rs/guide/),
+[Carapace](https://carapace-sh.github.io/carapace-bin/setup.html),
+[zoxide](https://github.com/ajeetdsouza/zoxide).
