@@ -1,0 +1,39 @@
+# Compact two-line prompt with a blue/purple palette and Nerd Font icons.
+# Only inexpensive, useful modules are enabled in the format.
+add_newline = true
+command_timeout = 500
+format = "$os$username$hostname$directory$git_branch$git_status$cmd_duration$line_break$character"
+
+[os]
+disabled = false
+style = "bold #7aa2f7"
+[os.symbols]
+Macos = " "
+Linux = " "
+Windows = "󰍲 "
+
+[username]
+show_always = false
+style_user = "bold #bb9af7"
+format = "[$user]($style) "
+[hostname]
+ssh_only = true
+style = "#bb9af7"
+format = "[@$hostname]($style) "
+[directory]
+style = "bold #7aa2f7"
+truncation_length = 3
+truncate_to_repo = true
+read_only = " 󰌾"
+[git_branch]
+symbol = " "
+style = "#bb9af7"
+[git_status]
+style = "#ff9e64"
+[cmd_duration]
+min_time = 2000
+style = "#e0af68"
+format = "took [$duration]($style) "
+[character]
+success_symbol = "[❯](bold #9ece6a)"
+error_symbol = "[❯](bold #f7768e)"

@@ -1,6 +1,6 @@
 #!/bin/sh
 # ==============================================================================
-# install.sh — OS/shell discovery bootstrap for the zsh DevOps setup scripts
+# install.sh — OS/shell discovery bootstrap for the Nushell DevOps setup scripts
 # ==============================================================================
 # Detects your operating system (and, on Linux, your distribution), reports the
 # environment, then downloads and runs the matching setup script:
@@ -56,7 +56,7 @@ have_tty() { { true < /dev/tty; } 2>/dev/null; }
 
 usage() {
   cat <<EOF
-install.sh — detect OS/shell and run the matching zsh DevOps setup script.
+install.sh — detect OS/shell and run the matching Nushell DevOps setup script.
 
 Options:
   -n, --dry-run   Detect and print the environment, but do not download or run.
@@ -107,23 +107,23 @@ if [ "$OS" = "Linux" ] && [ -r /etc/os-release ]; then
   DISTRO="$( . /etc/os-release 2>/dev/null; printf '%s' "${PRETTY_NAME:-${NAME:-}}" )"
 fi
 
-# The user's configured login shell, plus whether zsh is already present.
+# The user's configured login shell, plus whether Nushell is already present.
 LOGIN_SHELL="${SHELL:-unknown}"
-if command -v zsh >/dev/null 2>&1; then
-  ZSH_STATE="present ($(zsh --version 2>/dev/null | cut -d' ' -f1-2))"
+if command -v nu >/dev/null 2>&1; then
+  NU_STATE="present ($(nu --version 2>/dev/null | cut -d' ' -f1-2))"
 else
-  ZSH_STATE="not installed — the setup script will install it"
+  NU_STATE="not installed — the setup script will install it"
 fi
 
 # ------------------------------------------------------------------------------
 # Report
 # ------------------------------------------------------------------------------
-printf '%b' "\n${C_B}${C_C}==== zsh DevOps environment installer ====${C_0}\n\n"
+printf '%b' "\n${C_B}${C_C}==== Nushell DevOps environment installer ====${C_0}\n\n"
 say "Operating system : ${PLATFORM} (${OS})"
 say "Architecture     : ${ARCH}"
 [ -n "$DISTRO" ] && say "Distribution     : ${DISTRO}"
 say "Login shell      : ${LOGIN_SHELL}"
-say "zsh              : ${ZSH_STATE}"
+say "Nushell          : ${NU_STATE}"
 say "Selected script  : ${SCRIPT}"
 say "Source           : ${REPO}@${REF}"
 printf '\n'
@@ -131,6 +131,7 @@ printf '\n'
 if [ "$DRY_RUN" -eq 1 ]; then
   say "Dry run — would download and execute:"
   say "  ${RAW_BASE}/${SCRIPT}"
+  say "  plus configure-nushell.nu and shell/*.nu / shell/starship.toml from the same ref"
   exit 0
 fi
 
@@ -154,30 +155,29 @@ fi
 # ------------------------------------------------------------------------------
 # Download the setup script to a temp file, then execute it with bash.
 # Running from a file (rather than another pipe) keeps the setup script's stdin
-# free for its own prompts (sudo, chsh, oh-my-zsh).
+# free for its own prompts (sudo, chsh).
 # ------------------------------------------------------------------------------
 command -v bash >/dev/null 2>&1 || die "bash is required to run the setup script, but was not found."
 
-TMP="$(mktemp "${TMPDIR:-/tmp}/zsh-setup.XXXXXX")" || die "Could not create a temp file."
-trap 'rm -f "$TMP"' EXIT INT TERM
-
-URL="${RAW_BASE}/${SCRIPT}"
-say "Downloading ${URL} …"
-if command -v curl >/dev/null 2>&1; then
-  curl -fsSL "$URL" -o "$TMP" || die "Download failed (curl). Check the URL / network."
-elif command -v wget >/dev/null 2>&1; then
-  wget -qO "$TMP" "$URL" || die "Download failed (wget). Check the URL / network."
-else
-  die "Neither curl nor wget is available to download the setup script."
-fi
-[ -s "$TMP" ] || die "Downloaded setup script is empty."
-
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/nu-setup.XXXXXX")" || die "Could not create a temp directory."
+trap 'rm -rf "$TMP"' EXIT INT TERM
+mkdir -p "$TMP/shell"
+# The configurator and templates must come from the same ref as the installer.
+for file in "$SCRIPT" configure-nushell.nu shell/env.nu shell/config.nu shell/aliases.nu shell/starship.toml; do
+  URL="${RAW_BASE}/${file}"
+  say "Downloading ${URL} …"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$URL" -o "$TMP/$file" || die "Download failed: $file"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$TMP/$file" "$URL" || die "Download failed: $file"
+  else
+    die "Neither curl nor wget is available."
+  fi
+  [ -s "$TMP/$file" ] || die "Downloaded file is empty: $file"
+done
 say "Launching ${SCRIPT} …"
-printf '\n'
-# Reconnect stdin to the terminal when one can actually be opened, so the setup
-# script's prompts work; otherwise leave stdin as-is (e.g. CI/cron).
 if have_tty; then
-  bash "$TMP" < /dev/tty
+  bash "$TMP/$SCRIPT" < /dev/tty
 else
-  bash "$TMP"
+  bash "$TMP/$SCRIPT"
 fi
