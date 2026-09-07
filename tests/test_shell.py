@@ -17,7 +17,7 @@ class ShellConfigTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix='nushell test ')
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name)
-        self.env = dict(os.environ, HOME=str(self.home), USERPROFILE=str(self.home), TERM="xterm-256color",
+        self.env = dict(os.environ, HOME=str(self.home), USERPROFILE=str(self.home), TERM="xterm-256color", EDITOR="vim", VISUAL="code --wait",
                         XDG_CONFIG_HOME=str(self.home/'config'), XDG_DATA_HOME=str(self.home/'data'),
                         XDG_CACHE_HOME=str(self.home/'cache'), STARSHIP_CACHE=str(self.home/'cache/starship'))
         self.env.pop('STARSHIP_CONFIG', None)
@@ -39,6 +39,7 @@ class ShellConfigTests(unittest.TestCase):
             (self.home/name).write_text('# original\n')
         self.generate()
         self.assertEqual(self.shell('$env.STARSHIP_SHELL').strip(),'nu')
+        self.assertEqual(json.loads(self.shell('[$env.EDITOR $env.VISUAL $env.config.buffer_editor] | to json')), ['nvim', 'nvim', 'nvim'])
         # Normal interactive startup must discover the native config directory.
         ready = subprocess.run([NU, '--no-history', '-e', 'print $env.STARSHIP_SHELL; exit'], env=self.env, cwd=self.home, capture_output=True, text=True)
         self.assertEqual(ready.returncode, 0, ready.stderr)

@@ -227,6 +227,7 @@ Write-Warn "  - VSCode:           `"terminal.integrated.fontFamily`": `"JetBrain
 
 Write-Header "Shell tools — Nushell, Starship, Carapace & zoxide"
 Install-ScoopPackage nushell "Nushell" nu
+Install-ScoopPackage neovim "Neovim (default editor)" nvim
 Install-ScoopPackage starship "Starship" starship
 Install-ScoopPackage extras/carapace-bin "Carapace" carapace
 Install-ScoopPackage zoxide "zoxide" zoxide
