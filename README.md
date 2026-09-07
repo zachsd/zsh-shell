@@ -67,6 +67,8 @@ release API lookups. Linux downloads remain bounded by `MAX_PARALLEL_DOWNLOADS`
   structured completion and fuzzy matching.
 - zoxide: `z <name>` jumps to a frequent directory; `zi` uses the fzf picker.
   Native `cd` remains available.
+- Neovim (`nvim`) is installed and selected for `EDITOR`, `VISUAL`, and
+  Nushell’s command-buffer editor. Personal overrides can go in `config.local.nu`.
 - Built-in syntax highlighting, Emacs editing, shared SQLite history,
   and explicit Option/Alt-arrow (and Meta-b/f) word navigation.
 - Common Terraform, AWS, Azure, Kubernetes, Helm, Docker and Git aliases,
@@ -123,7 +125,7 @@ on Windows restore the settings backup or choose the previous default profile.
 
 ## Installed tools
 
-- Shell: Nushell, Starship, Carapace, zoxide, fzf, JetBrainsMono Nerd Font.
+- Shell/editor: Nushell, Neovim, Starship, Carapace, zoxide, fzf, JetBrainsMono Nerd Font.
 - Agents/worktrees: Herdr, Pi, Worktrunk, Babysitter (`@a5c-ai/babysitter`).
 - IaC: Terraform, Terragrunt, Packer, Vault, TFLint, terraform-docs, Infracost,
   SOPS; Ansible on Unix.

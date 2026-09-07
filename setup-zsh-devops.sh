@@ -102,6 +102,7 @@ warn "  • VSCode:       terminal.integrated.fontFamily"
 
 header "4 / 8  Nushell, Starship, Carapace & zoxide"
 safe_brew_install nushell "Nushell (default shell)"
+safe_brew_install neovim "Neovim (default editor)"
 safe_brew_install starship "Starship prompt"
 safe_brew_install carapace "Carapace command completion"
 safe_brew_install zoxide "zoxide (smart directory navigation)"

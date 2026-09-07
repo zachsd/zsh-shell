@@ -551,6 +551,7 @@ warn "  • Konsole:         Settings → Edit Current Profile → Appearance �
 warn "  • VSCode:          \"terminal.integrated.fontFamily\": \"JetBrainsMono Nerd Font Mono\""
 
 header "4 / 8  Nushell, Starship & Carapace"
+safe_pkg_install neovim "Neovim (default editor)"
 case "$ARCH" in
   amd64|arm64) NU_TARGET="${ARCH_ALT}-unknown-linux-musl" ;;
   *) error "Nushell setup supports Linux x86_64 and aarch64 release binaries." ;;
