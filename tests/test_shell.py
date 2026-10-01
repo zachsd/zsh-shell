@@ -98,8 +98,24 @@ done
                 self.assertFalse(list(cache.parent.glob('*.zsh.*')))
                 self.shell("zsh_completion_tools=('../escape|kubectl completion zsh'); zsh-refresh-completions", success=False)
                 self.assertFalse((cache.parent.parent / 'escape.zsh').exists())
-                (self.home / '.zshrc.local').write_text('export LOCAL_LOADED=yes\n')
-                self.shell('[[ $LOCAL_LOADED == yes ]]')
+                local_dir = self.home / '.zshrc.d'
+                self.assertTrue(local_dir.is_dir())
+                self.assertEqual(local_dir.stat().st_mode & 0o777, 0o700)
+                first = local_dir / '10-machine.zsh'
+                second = local_dir / '20-secrets.zsh'
+                ignored = local_dir / 'README.txt'
+                first.write_text('export LOCAL_LOAD_ORDER=machine\n')
+                second.write_text('export LOCAL_LOAD_ORDER="${LOCAL_LOAD_ORDER}:secrets"\nexport PRIVATE_MARKER=kept\n')
+                ignored.write_text('export SHOULD_NOT_LOAD=yes\n')
+                local = self.home / '.zshrc.local'
+                local.write_text('export LOCAL_LOAD_ORDER="${LOCAL_LOAD_ORDER}:legacy"\n')
+                self.shell('[[ $LOCAL_LOAD_ORDER == machine:secrets:legacy && $PRIVATE_MARKER == kept && -z $SHOULD_NOT_LOAD ]]')
+
+                # A setup rerun replaces .zshrc but leaves every local drop-in intact.
+                before = {path.name: path.read_text() for path in (first, second, ignored)}
+                self.generate(script)
+                self.assertEqual(before, {path.name: path.read_text() for path in (first, second, ignored)})
+                self.shell('[[ $LOCAL_LOAD_ORDER == machine:secrets:legacy && $PRIVATE_MARKER == kept ]]')
                 (self.home / '.zshrc.local').unlink()
                 (self.home / 'wt-generator').unlink(missing_ok=True)
 

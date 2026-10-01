@@ -312,6 +312,14 @@ fi
 
 ZSHRC="${HOME}/.zshrc"
 BACKUP="${HOME}/.zshrc.backup.${TIMESTAMP}"
+LOCAL_CONFIG_DIR="${HOME}/.zshrc.d"
+
+# This directory belongs to the machine, not the repository. Create it once and
+# never replace, clean, or copy its contents during subsequent setup runs.
+if [[ ! -d "$LOCAL_CONFIG_DIR" ]]; then
+  mkdir -m 700 "$LOCAL_CONFIG_DIR"
+  log "Created persistent local config directory → $LOCAL_CONFIG_DIR"
+fi
 
 if [[ -f "$ZSHRC" ]]; then
   cp "$ZSHRC" "$BACKUP"
@@ -918,7 +926,14 @@ k8senc() { base64 < "\$1" | tr -d '\n'; echo; }
 # Watch kubectl top
 ktop() { watch -n 3 kubectl top nodes; }
 
-# Machine-specific settings survive installer reruns.
+# Machine-specific settings survive installer reruns. Files load in lexical
+# order; use numeric prefixes such as 10-work.zsh and 20-secrets.zsh.
+for _local_config in "\$HOME"/.zshrc.d/*.zsh(N); do
+  source "\$_local_config"
+done
+unset _local_config
+
+# Backward-compatible single-file override, loaded after the directory.
 if [[ -r "\$HOME/.zshrc.local" ]]; then source "\$HOME/.zshrc.local"; fi
 ZSHRC_EOF
 
