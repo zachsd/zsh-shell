@@ -57,12 +57,29 @@ class ShellConfigTests(unittest.TestCase):
         for script in ('setup-zsh-devops.sh', 'setup-zsh-devops-linux.sh'):
             with self.subTest(platform=script):
                 self.generate(script)
+                self.stub('herdr', '''
+if [ "$1" = completion ]; then
+  echo '#compdef herdr'
+else
+  echo launched >> "$HOME/herdr-launches"
+fi''')
                 self.shell('')
+                self.assertTrue((self.home / 'herdr-launches').exists())
+                (self.home / 'herdr-launches').unlink()
+                nested_env = dict(self.env, HERDR_ENV='1')
+                nested = subprocess.run(
+                    [ZSH, '-fic', 'source "$HOME/.zshrc"'], env=nested_env,
+                    text=True, capture_output=True)
+                self.assertEqual(nested.returncode, 0, nested.stderr)
+                self.assertFalse((self.home / 'herdr-launches').exists())
                 self.shell('[[ $EDITOR == nvim && $VISUAL == nvim ]]')
                 generated = (self.home / '.zshrc').read_text()
                 self.assertIn('starship init zsh', generated)
                 self.assertNotIn('oh-my-posh', generated)
                 self.assertNotIn('nushell', generated.lower())
+                self.assertTrue(generated.rstrip().endswith('fi'))
+                self.assertGreater(generated.rindex('\n  herdr\n'),
+                                   generated.index('.zshrc.local'))
                 # Startup must not execute a completion generator with a cold cache.
                 self.stub('kubectl', 'echo called >> "$HOME/generator"; echo "compdef _files kubectl"')
                 result = self.shell('''
@@ -125,8 +142,10 @@ done
             with self.subTest(platform=script):
                 text = (ROOT / script).read_text()
                 integration = text.index('wt config shell install zsh')
-                self.assertGreater(integration, text.index('log ".zshrc written."'))
+                generated_config = text.index('\nZSHRC_EOF\n', text.index('cat > "$ZSHRC"'))
+                self.assertGreater(integration, generated_config)
                 self.assertGreater(integration, text.index('if [[ ${ZSH_SETUP_CONFIG_ONLY:-0} == 1 ]]', integration - 500))
+                self.assertGreater(text.index('append_herdr_startup', integration), integration)
                 self.assertNotIn('wt|wt config shell init zsh', text)
 
 if __name__ == '__main__':

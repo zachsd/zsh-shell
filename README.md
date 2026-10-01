@@ -120,6 +120,11 @@ PowerShell profiles. Start Pi with `pi` and configure its provider with `/login`
 Babysitter's CLI is installed; harness-specific integration remains a separate
 step following its documentation.
 
+Each generated `.zshrc` ends by launching or attaching to the default Herdr
+session. Shells already running in a Herdr pane skip this step to prevent a
+nested client, and startup continues normally when the `herdr` command is not
+available.
+
 ---
 
 ## Performance notes

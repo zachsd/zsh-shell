@@ -936,9 +936,21 @@ unset _local_config
 if [[ -r "\$HOME/.zshrc.local" ]]; then source "\$HOME/.zshrc.local"; fi
 ZSHRC_EOF
 
-log ".zshrc written."
-log "Run zsh-refresh-completions in a new shell to prepare tool completions."
+append_herdr_startup() {
+  cat >> "$ZSHRC" << 'HERDR_EOF'
+
+# Launch or attach to the default Herdr session. Herdr-managed panes set
+# HERDR_ENV=1, which prevents nested clients when their shells initialize.
+if [[ -o interactive && ${HERDR_ENV:-0} != 1 ]] && command -v herdr &>/dev/null; then
+  herdr
+fi
+HERDR_EOF
+}
+
 if [[ ${ZSH_SETUP_CONFIG_ONLY:-0} == 1 ]]; then
+  append_herdr_startup
+  log ".zshrc written."
+  log "Run zsh-refresh-completions in a new shell to prepare tool completions."
   log "Configuration updated; existing environment files and packages preserved."
   exit 0
 fi
@@ -951,6 +963,10 @@ else
   warn "Worktrunk is unavailable; skipping its Zsh shell integration."
   FAILED_PKGS+=("Worktrunk Zsh integration")
 fi
+
+append_herdr_startup
+log ".zshrc written."
+log "Run zsh-refresh-completions in a new shell to prepare tool completions."
 
 # ==============================================================================
 # Final summary
