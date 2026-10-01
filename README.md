@@ -130,7 +130,7 @@ available.
 
 ## Performance notes
 
-The generated shell config keeps maintenance out of interactive startup:
+The generated shell config keeps routine maintenance lightweight:
 
 - Tool completions are driven by `zsh_completion_tools` in `~/.zshrc`.
   Run `zsh-refresh-completions` once after setup and after tool upgrades, then
@@ -150,6 +150,23 @@ The generated shell config keeps maintenance out of interactive startup:
 - `PATH` stays in `~/.zshenv` (Linux) / `~/.zprofile` (macOS), de-duplicated via
   `typeset -U`.
 - Linux release downloads still run in parallel during installation.
+
+### Automatic repository updates
+
+Setup records the exact installed commit from `main` and installs
+`~/.local/bin/zsh-shell-update`. Interactive shells check the remote `main`
+commit at most once every 24 hours. Matching revisions produce no output. When
+they differ, the shell shows both hashes and asks `Update now? [y/N]`.
+
+Accepting the update downloads a shallow copy of `main`, runs the matching
+platform installer, and records the new revision only after setup succeeds.
+The checker uses the existing authenticated `gh` session when available and
+falls back to Git's configured credentials, which keeps private repository
+access out of the generated configuration.
+
+Run `zsh-shell-update` to check immediately, or `zsh-shell-update --yes` for a
+non-interactive update. Set `ZSH_SHELL_UPDATE_INTERVAL` in a persistent drop-in
+to change the interval in seconds; the default is `86400`.
 
 ### Update configuration without reinstalling tools
 
@@ -231,6 +248,7 @@ Environment overrides:
 | `ZSH_SETUP_REPO` | `zachsd/zsh-shell` | Source `owner/repo`. |
 | `ZSH_SETUP_REF`  | `main` | Branch / tag / commit to pull the scripts from. |
 | `GITHUB_TOKEN`   | — | Used by the Linux installer to avoid GitHub API rate limits. |
+| `ZSH_SHELL_UPDATE_INTERVAL` | `86400` | Seconds between automatic checks. |
 
 The Linux installer also honors `MAX_PARALLEL_DOWNLOADS` (default `6`).
 
@@ -264,6 +282,7 @@ The Linux installer also honors `MAX_PARALLEL_DOWNLOADS` (default `6`).
 | File | Purpose |
 | ---- | ------- |
 | `install.sh` | OS/shell discovery bootstrap; run via `curl … \| sh`. |
+| `bin/zsh-shell-update` | Daily revision checker and interactive updater. |
 | `setup-zsh-devops-linux.sh` | Full setup for Linux (apt / dnf / yum). |
 | `setup-zsh-devops.sh` | Full setup for macOS (Homebrew). |
 | `setup-pwsh-devops.ps1` | Windows PowerShell setup (Scoop / Winget). |

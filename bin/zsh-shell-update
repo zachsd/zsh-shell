@@ -1,0 +1,133 @@
+#!/bin/sh
+# Check the installed zsh-shell revision against main and offer to update it.
+
+set -u
+
+MODE=force
+ASSUME_YES=0
+case "${1:-}" in
+  --check) MODE=check ;;
+  --yes) ASSUME_YES=1 ;;
+  --help|-h)
+    cat <<'EOF'
+Usage: zsh-shell-update [--check | --yes]
+
+  --check  Respect the 24-hour automatic-check interval.
+  --yes    Check immediately and install an available update without prompting.
+EOF
+    exit 0
+    ;;
+  '') : ;;
+  *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
+esac
+
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/zsh-shell"
+INSTALLED_FILE="$STATE_DIR/installed-commit"
+REPOSITORY_FILE="$STATE_DIR/repository"
+LAST_CHECK_FILE="$STATE_DIR/last-check"
+CHECK_INTERVAL="${ZSH_SHELL_UPDATE_INTERVAL:-86400}"
+
+is_commit() {
+  printf '%s\n' "$1" | grep -Eq '^[0-9a-fA-F]{40}$'
+}
+
+note() {
+  [ "$MODE" = check ] || printf '[zsh-shell] %s\n' "$*"
+}
+
+mkdir -p "$STATE_DIR" 2>/dev/null || exit 0
+chmod 700 "$STATE_DIR" 2>/dev/null || true
+
+now=$(date +%s 2>/dev/null || printf '0')
+if [ "$MODE" = check ] && [ -r "$LAST_CHECK_FILE" ]; then
+  last_check=$(sed -n '1p' "$LAST_CHECK_FILE" 2>/dev/null)
+  case "$last_check:$CHECK_INTERVAL:$now" in
+    *[!0-9:]*|'') : ;;
+    *) [ $((now - last_check)) -lt "$CHECK_INTERVAL" ] && exit 0 ;;
+  esac
+fi
+printf '%s\n' "$now" > "$LAST_CHECK_FILE" 2>/dev/null || true
+
+repository=$(sed -n '1p' "$REPOSITORY_FILE" 2>/dev/null)
+installed=$(sed -n '1p' "$INSTALLED_FILE" 2>/dev/null)
+if [ -z "$repository" ] || ! is_commit "$installed"; then
+  note "Installed revision metadata is unavailable; rerun the installer once to enable updates."
+  exit 0
+fi
+
+latest=""
+if command -v gh >/dev/null 2>&1; then
+  latest=$(gh api "repos/$repository/commits/main" --jq .sha 2>/dev/null || true)
+fi
+if ! is_commit "$latest" && command -v git >/dev/null 2>&1; then
+  latest=$(GIT_TERMINAL_PROMPT=0 git -c http.lowSpeedLimit=1 -c http.lowSpeedTime=10 \
+    ls-remote "https://github.com/${repository}.git" refs/heads/main 2>/dev/null \
+    | awk 'NR == 1 { print $1 }')
+fi
+if ! is_commit "$latest"; then
+  note "Could not read the latest main revision. Check GitHub authentication and try again."
+  exit 0
+fi
+
+if [ "$installed" = "$latest" ]; then
+  short_commit=$(printf '%.12s' "$installed")
+  note "Already current ($short_commit)."
+  exit 0
+fi
+
+printf '\n[zsh-shell] An update is available.\n'
+printf '  installed: %.12s\n' "$installed"
+printf '  main:      %.12s\n' "$latest"
+
+if [ "$ASSUME_YES" -ne 1 ]; then
+  if { true < /dev/tty; } 2>/dev/null; then
+    printf 'Update now? [y/N] ' > /dev/tty
+    read answer < /dev/tty || answer=""
+    case "$answer" in
+      y|Y|yes|YES|Yes) : ;;
+      *) printf '[zsh-shell] Update skipped.\n'; exit 0 ;;
+    esac
+  else
+    printf '[zsh-shell] No interactive terminal; run zsh-shell-update to update.\n'
+    exit 0
+  fi
+fi
+
+tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/zsh-shell-update.XXXXXX") || exit 1
+trap 'rm -rf "$tmp_dir"' EXIT INT TERM
+checkout="$tmp_dir/repository"
+
+cloned=0
+if command -v gh >/dev/null 2>&1; then
+  if gh repo clone "$repository" "$checkout" -- --depth 1 --branch main 2>/dev/null; then
+    cloned=1
+  fi
+fi
+if [ "$cloned" -ne 1 ]; then
+  checkout="$tmp_dir/git-repository"
+  if GIT_TERMINAL_PROMPT=0 git clone --quiet --depth 1 --branch main \
+      "https://github.com/${repository}.git" "$checkout" 2>/dev/null; then
+    cloned=1
+  fi
+fi
+if [ "$cloned" -ne 1 ]; then
+  printf '[zsh-shell] Could not download the update. Check GitHub authentication.\n' >&2
+  exit 1
+fi
+
+case "$(uname -s 2>/dev/null)" in
+  Darwin) setup_script="$checkout/setup-zsh-devops.sh" ;;
+  Linux) setup_script="$checkout/setup-zsh-devops-linux.sh" ;;
+  *) printf '[zsh-shell] Unsupported operating system.\n' >&2; exit 1 ;;
+esac
+
+actual_commit=$(git -C "$checkout" rev-parse HEAD 2>/dev/null || printf '%s' "$latest")
+printf '[zsh-shell] Updating to %.12s …\n' "$actual_commit"
+if ZSH_SETUP_COMMIT="$actual_commit" ZSH_SETUP_REPO="$repository" bash "$setup_script"; then
+  printf '%s\n' "$actual_commit" > "$INSTALLED_FILE"
+  chmod 600 "$INSTALLED_FILE" "$REPOSITORY_FILE" "$LAST_CHECK_FILE" 2>/dev/null || true
+  printf '[zsh-shell] Update complete. Open a new shell to use it.\n'
+else
+  printf '[zsh-shell] Update failed; the installed revision was not changed.\n' >&2
+  exit 1
+fi

@@ -62,6 +62,33 @@ clone_or_update_plugin() {
   fi
 }
 
+install_update_checker() {
+  local source="$SCRIPT_DIR/bin/zsh-shell-update"
+  local destination="$HOME/.local/bin/zsh-shell-update"
+  local state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/zsh-shell"
+  local commit="${ZSH_SETUP_COMMIT:-}"
+
+  if [[ ! -f "$source" ]]; then
+    warn "Update checker not found in the installer bundle; automatic updates are disabled."
+    return
+  fi
+
+  mkdir -p "$HOME/.local/bin" "$state_dir"
+  chmod 700 "$state_dir"
+  install -m 0755 "$source" "$destination"
+
+  if [[ ! "$commit" =~ ^[0-9a-fA-F]{40}$ ]] && command -v git &>/dev/null; then
+    commit=$(git -C "$SCRIPT_DIR" rev-parse --verify 'HEAD^{commit}' 2>/dev/null || true)
+  fi
+  [[ "$commit" =~ ^[0-9a-fA-F]{40}$ ]] || commit="unknown"
+
+  printf '%s\n' "$commit" > "$state_dir/installed-commit"
+  printf '%s\n' "${ZSH_SETUP_REPO:-zachsd/zsh-shell}" > "$state_dir/repository"
+  date +%s > "$state_dir/last-check"
+  chmod 600 "$state_dir/installed-commit" "$state_dir/repository" "$state_dir/last-check"
+  log "Automatic update checker installed → $destination"
+}
+
 # ==============================================================================
 # 1. Preflight
 # ==============================================================================
@@ -289,6 +316,7 @@ if [[ -f "$SCRIPT_DIR/shell/starship.toml" ]]; then
 else
   warn "Starship theme file not found; Starship will use its default prompt."
 fi
+install_update_checker
 
 # --- ~/.zprofile : PATH lives here. On macOS, ~/.zprofile is sourced after
 #     /etc/zprofile's path_helper, so our dirs reliably take precedence.
@@ -938,6 +966,11 @@ ZSHRC_EOF
 
 append_herdr_startup() {
   cat >> "$ZSHRC" << 'HERDR_EOF'
+
+# Check main at most once per day and prompt when an update is available.
+if [[ -x "$HOME/.local/bin/zsh-shell-update" ]]; then
+  "$HOME/.local/bin/zsh-shell-update" --check
+fi
 
 # Launch or attach to the default Herdr session. Herdr-managed panes set
 # HERDR_ENV=1, which prevents nested clients when their shells initialize.

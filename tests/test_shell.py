@@ -20,7 +20,9 @@ class ShellConfigTests(unittest.TestCase):
         self.env = dict(os.environ, HOME=str(self.home), ZDOTDIR=str(self.home),
                         XDG_CACHE_HOME=str(self.home / '.cache'),
                         PATH=f'{self.bin}:/usr/bin:/bin', TERM='xterm-256color',
-                        ZSH_SETUP_CONFIG_ONLY='1')
+                        ZSH_SETUP_CONFIG_ONLY='1',
+                        ZSH_SETUP_COMMIT='1' * 40,
+                        ZSH_SETUP_REPO='zachsd/zsh-shell')
         self.stub('brew', 'echo /nonexistent-homebrew')
         for cmd in ('sudo', 'curl', 'wget', 'git', 'chsh'):
             self.stub(cmd, f'echo {cmd} >> "$HOME/forbidden"; exit 99')
@@ -43,6 +45,12 @@ class ShellConfigTests(unittest.TestCase):
         self.assertTrue(list(self.home.glob('.zshrc.backup.*')))
         for name in ('.zprofile', '.zshenv'):
             self.assertEqual((self.home / name).read_text(), '# keep environment\n')
+        updater = self.home / '.local/bin/zsh-shell-update'
+        self.assertTrue(updater.is_file())
+        self.assertTrue(updater.stat().st_mode & 0o111)
+        state = self.home / '.local/state/zsh-shell'
+        self.assertEqual((state / 'installed-commit').read_text(), '1' * 40 + '\n')
+        self.assertEqual((state / 'repository').read_text(), 'zachsd/zsh-shell\n')
         subprocess.run([ZSH, '-n', str(self.home / '.zshrc')], check=True)
 
     def shell(self, code, success=True):
@@ -78,6 +86,9 @@ fi''')
                 self.assertNotIn('oh-my-posh', generated)
                 self.assertNotIn('nushell', generated.lower())
                 self.assertTrue(generated.rstrip().endswith('fi'))
+                self.assertIn('zsh-shell-update" --check', generated)
+                self.assertLess(generated.rindex('zsh-shell-update" --check'),
+                                generated.rindex('\n  herdr\n'))
                 self.assertGreater(generated.rindex('\n  herdr\n'),
                                    generated.index('.zshrc.local'))
                 # Startup must not execute a completion generator with a cold cache.
