@@ -160,9 +160,9 @@ command -v bash >/dev/null 2>&1 || die "bash is required to run the setup script
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/zsh-setup.XXXXXX")" || die "Could not create a temp directory."
 trap 'rm -rf "$TMP"' EXIT INT TERM
-mkdir -p "$TMP/shell"
+mkdir -p "$TMP/shell" "$TMP/bin"
 
-for file in "$SCRIPT" shell/starship.toml; do
+for file in "$SCRIPT" shell/starship.toml bin/zsh-shell-update; do
   URL="${RAW_BASE}/${file}"
   say "Downloading ${URL} …"
   if command -v curl >/dev/null 2>&1; then
@@ -175,12 +175,41 @@ for file in "$SCRIPT" shell/starship.toml; do
   [ -s "$TMP/$file" ] || die "Downloaded file is empty: $file"
 done
 
+# Resolve the exact source revision so the installed updater has a reliable
+# baseline. A caller can provide it for authenticated or nonstandard sources.
+COMMIT="${ZSH_SETUP_COMMIT:-}"
+if [ "${#COMMIT}" -ne 40 ]; then
+  COMMIT=""
+else
+  case "$COMMIT" in *[!0-9a-fA-F]*) COMMIT="" ;; esac
+fi
+if [ -z "$COMMIT" ]; then
+  if [ "${#REF}" -eq 40 ]; then
+    case "$REF" in *[!0-9a-fA-F]*) : ;; *) COMMIT="$REF" ;; esac
+  fi
+fi
+if [ -z "$COMMIT" ] && command -v git >/dev/null 2>&1; then
+  COMMIT=$(GIT_TERMINAL_PROMPT=0 git -c http.lowSpeedLimit=1 -c http.lowSpeedTime=10 \
+    ls-remote "https://github.com/${REPO}.git" "refs/heads/${REF}" 2>/dev/null \
+    | awk 'NR == 1 { print $1 }')
+fi
+if [ -z "$COMMIT" ] && command -v curl >/dev/null 2>&1; then
+  if [ -n "${GITHUB_TOKEN:-}" ]; then
+    COMMIT=$(curl -H "Authorization: token $GITHUB_TOKEN" -fsSL \
+      "https://api.github.com/repos/${REPO}/commits/${REF}" 2>/dev/null \
+      | sed -n 's/.*"sha":[[:space:]]*"\([0-9a-fA-F]\{40\}\)".*/\1/p' | head -1)
+  else
+    COMMIT=$(curl -fsSL "https://api.github.com/repos/${REPO}/commits/${REF}" 2>/dev/null \
+      | sed -n 's/.*"sha":[[:space:]]*"\([0-9a-fA-F]\{40\}\)".*/\1/p' | head -1)
+  fi
+fi
+
 say "Launching ${SCRIPT} …"
 printf '\n'
 # Reconnect stdin to the terminal when one can actually be opened, so the setup
 # script's prompts work; otherwise leave stdin as-is (e.g. CI/cron).
 if have_tty; then
-  bash "$TMP/$SCRIPT" < /dev/tty
+  ZSH_SETUP_COMMIT="$COMMIT" ZSH_SETUP_REPO="$REPO" bash "$TMP/$SCRIPT" < /dev/tty
 else
-  bash "$TMP/$SCRIPT"
+  ZSH_SETUP_COMMIT="$COMMIT" ZSH_SETUP_REPO="$REPO" bash "$TMP/$SCRIPT"
 fi
