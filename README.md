@@ -159,16 +159,36 @@ ZSH_SETUP_CONFIG_ONLY=1 bash setup-zsh-devops-linux.sh
 This backs up and replaces `~/.zshrc`, skips package installation, downloads,
 font setup and shell changes, and preserves `~/.zprofile` / `~/.zshenv`.
 It requires the existing shell dependencies (including Homebrew on macOS).
-Put machine-specific settings in `~/.zshrc.local`, which is loaded last and
-preserved by either installation mode. Open a new shell and run
+Put machine-specific settings in `~/.zshrc.d/` as described below. The legacy
+`~/.zshrc.local` file remains supported and loads last. Open a new shell and run
 `zsh-refresh-completions`; open another shell to use the refreshed caches.
 Restore the printed `.zshrc.backup.<timestamp>` file to roll back.
+
+### Persistent machine configuration
+
+The installer creates `~/.zshrc.d/` with owner-only permissions. Every `*.zsh`
+file in that directory is sourced at shell startup in lexical order. Setup
+reruns replace the generated `~/.zshrc`, but never replace, remove, or copy the
+drop-in directory or its contents.
+
+Use numeric prefixes to make dependencies explicit:
+
+```sh
+~/.zshrc.d/10-machine.zsh
+~/.zshrc.d/20-work.zsh
+~/.zshrc.d/90-secrets.zsh
+```
+
+Keep host-specific exports, credentials, client settings, and private aliases
+there. Files without a `.zsh` suffix are ignored. Restrict secret-bearing files
+with `chmod 600 ~/.zshrc.d/90-secrets.zsh`.
 
 ### Option-arrow navigation
 
 The shell binds common terminal sequences in both Emacs and vi insert keymaps,
 including Esc-b/f, Alt-arrow, double-Esc arrows, and Ctrl-arrow. Emacs editing
-is the default; add `bindkey -v` to `~/.zshrc.local` if you prefer vi mode.
+is the default; add `bindkey -v` to a drop-in such as
+`~/.zshrc.d/30-keybindings.zsh` if you prefer vi mode.
 
 If a terminal intercepts the shortcut, configure Option-Left to send `Esc b`
 and Option-Right to send `Esc f`. In iTerm2, review the profile's
