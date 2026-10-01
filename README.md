@@ -59,7 +59,8 @@ bash setup-zsh-devops.sh
 
 **Shell & prompt**
 - zsh set as your default shell, with oh-my-zsh (plugins + completions)
-- a compact Git-aware prompt rendered by Starship
+- a compact Starship prompt with Git file-state counts, command duration, and
+  the active Python virtual environment
 - Carapace completions, generated into the existing completion cache on demand
 - Native Tab / Shift-Tab menus, `zsh-autosuggestions`, `fast-syntax-highlighting`
 - Option/Alt–Left and Right move by word; Up/Down browse command history
