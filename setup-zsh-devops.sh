@@ -402,7 +402,6 @@ zsh_completion_tools=(
   "gh|gh completion -s zsh"
   "herdr|herdr completion zsh"
   "carapace|carapace _carapace"
-  "wt|wt config shell init zsh"
 )
 
 zsh-refresh-completions() {
@@ -942,6 +941,15 @@ log "Run zsh-refresh-completions in a new shell to prepare tool completions."
 if [[ ${ZSH_SETUP_CONFIG_ONLY:-0} == 1 ]]; then
   log "Configuration updated; existing environment files and packages preserved."
   exit 0
+fi
+
+if command -v wt &>/dev/null; then
+  log "Installing Worktrunk Zsh shell integration …"
+  wt config shell install zsh \
+    || { warn "Worktrunk Zsh shell integration failed."; FAILED_PKGS+=("Worktrunk Zsh integration"); }
+else
+  warn "Worktrunk is unavailable; skipping its Zsh shell integration."
+  FAILED_PKGS+=("Worktrunk Zsh integration")
 fi
 
 # ==============================================================================
