@@ -1,5 +1,4 @@
 # Compact two-line prompt with a blue/purple palette and Nerd Font icons.
-# Only inexpensive, useful modules are enabled in the format.
 add_newline = true
 command_timeout = 500
 format = "$os$username$hostname$directory$git_branch$git_status$cmd_duration$line_break$character"
