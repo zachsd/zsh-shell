@@ -1,7 +1,7 @@
 # Compact two-line prompt with a blue/purple palette and Nerd Font icons.
 add_newline = true
 command_timeout = 500
-format = "$os$username$hostname$directory$git_branch$git_status$cmd_duration$line_break$character"
+format = "$os$username$hostname$directory$git_branch$git_status$python$cmd_duration$line_break$character"
 
 [os]
 disabled = false
@@ -29,10 +29,31 @@ symbol = " "
 style = "#bb9af7"
 [git_status]
 style = "#ff9e64"
+format = '([$all_status$ahead_behind]($style) )'
+conflicted = '=${count} '
+untracked = '?${count} '
+modified = '~${count} '
+staged = '+${count} '
+renamed = '»${count} '
+deleted = '-${count} '
+stashed = '\$${count} '
+ahead = '⇡${count} '
+behind = '⇣${count} '
+diverged = '⇕⇡${ahead_count}⇣${behind_count} '
+
+[python]
+symbol = " "
+style = "bold #e0af68"
+format = "via [${symbol}${virtualenv}]($style) "
+detect_extensions = []
+detect_files = []
+detect_folders = []
+
 [cmd_duration]
-min_time = 2000
+min_time = 0
+show_milliseconds = true
 style = "#e0af68"
-format = "took [$duration]($style) "
+format = "in [$duration]($style) "
 [character]
 success_symbol = "[❯](bold #9ece6a)"
 error_symbol = "[❯](bold #f7768e)"
