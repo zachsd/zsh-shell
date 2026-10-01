@@ -63,8 +63,7 @@ class ShellConfigTests(unittest.TestCase):
                 self.assertIn('starship init zsh', generated)
                 self.assertNotIn('oh-my-posh', generated)
                 self.assertNotIn('nushell', generated.lower())
-                # Startup must not execute a generator, even with a cold cache.
-                self.stub('wt', "echo called >> \"$HOME/wt-generator\"; echo 'wt() { print -r -- wrapper-loaded; }'")
+                # Startup must not execute a completion generator with a cold cache.
                 self.stub('kubectl', 'echo called >> "$HOME/generator"; echo "compdef _files kubectl"')
                 result = self.shell('''
 for map in emacs viins; do
@@ -80,14 +79,11 @@ done
 [[ $plugins != *dirhistory* && $plugins != *zsh-autocomplete* ]] || exit 14
 ''')
                 self.assertFalse((self.home / 'generator').exists())
-                self.assertFalse((self.home / 'wt-generator').exists())
                 self.shell('zsh-refresh-completions')
                 cache = self.home / '.cache/zsh/completions/kubectl.zsh'
                 self.assertEqual(cache.read_text(), 'compdef _files kubectl\n')
                 (self.home / 'generator').unlink()
-                (self.home / 'wt-generator').unlink()
-                self.shell('[[ $_comps[kubectl] == _files ]] && [[ $(wt) == wrapper-loaded ]]')
-                self.assertFalse((self.home / 'wt-generator').exists())
+                self.shell('[[ $_comps[kubectl] == _files ]]')
                 self.assertFalse((self.home / 'generator').exists())
                 # A failed or malformed generator must preserve the working cache.
                 for body in ('echo broken; exit 1', 'echo "if then"', 'exit 0'):
@@ -117,13 +113,21 @@ done
                 self.assertEqual(before, {path.name: path.read_text() for path in (first, second, ignored)})
                 self.shell('[[ $LOCAL_LOAD_ORDER == machine:secrets:legacy && $PRIVATE_MARKER == kept ]]')
                 (self.home / '.zshrc.local').unlink()
-                (self.home / 'wt-generator').unlink(missing_ok=True)
 
     def test_installers_select_zsh(self):
         for script in ('setup-zsh-devops.sh', 'setup-zsh-devops-linux.sh'):
             text = (ROOT / script).read_text()
             self.assertIn('chsh -s "$ZSH_BIN"', text)
             self.assertNotIn('nushell', text.lower())
+
+    def test_worktrunk_shell_integration_follows_zshrc_generation(self):
+        for script in ('setup-zsh-devops.sh', 'setup-zsh-devops-linux.sh'):
+            with self.subTest(platform=script):
+                text = (ROOT / script).read_text()
+                integration = text.index('wt config shell install zsh')
+                self.assertGreater(integration, text.index('log ".zshrc written."'))
+                self.assertGreater(integration, text.index('if [[ ${ZSH_SETUP_CONFIG_ONLY:-0} == 1 ]]', integration - 500))
+                self.assertNotIn('wt|wt config shell init zsh', text)
 
 if __name__ == '__main__':
     unittest.main()

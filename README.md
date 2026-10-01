@@ -110,11 +110,12 @@ Existing commands are skipped on reruns. No agents, services, logins, or harness
 plugins are started/configured automatically. Configuration-only mode and
 PowerShell's `-SkipTools` skip these installations.
 
-In zsh, run `zsh-refresh-completions`, then open a new shell to enable Herdr
-completion and Worktrunk's directory-switching wrapper. The wrapper is cached
-with completions, so it adds no generator call to startup; refresh it after
-upgrading Worktrunk. On Windows use `git-wt` (plain `wt` is Windows Terminal),
-and run `git-wt config shell install powershell` after setup/re-generating the
+On macOS and Linux, setup runs `wt config shell install zsh` after writing
+`.zshrc`, enabling Worktrunk's directory switching and completions in new
+shells. Run `zsh-refresh-completions`, then open a new shell to enable cached
+completions for Herdr and the other supported tools. On Windows use `git-wt`
+(plain `wt` is Windows Terminal), and run
+`git-wt config shell install powershell` after setup/re-generating the
 PowerShell profiles. Start Pi with `pi` and configure its provider with `/login`.
 Babysitter's CLI is installed; harness-specific integration remains a separate
 step following its documentation.
