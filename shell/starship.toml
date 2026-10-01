@@ -1,7 +1,7 @@
 # Compact two-line prompt with a blue/purple palette and Nerd Font icons.
 add_newline = true
 command_timeout = 500
-format = "$os$username$hostname$directory$git_branch$git_status$python$cmd_duration$line_break$character"
+format = "$os$username$hostname$directory$git_branch$git_status$aws$python$cmd_duration$line_break$character"
 
 [os]
 disabled = false
@@ -40,6 +40,11 @@ stashed = '\$${count} '
 ahead = '⇡${count} '
 behind = '⇣${count} '
 diverged = '⇕⇡${ahead_count}⇣${behind_count} '
+
+[aws]
+symbol = "󰸏 "
+style = "bold #ff9e64"
+format = "aws [$symbol$profile]($style) "
 
 [python]
 symbol = " "
